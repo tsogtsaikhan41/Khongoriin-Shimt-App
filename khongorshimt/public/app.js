@@ -474,7 +474,7 @@ document.getElementById("form-adduser").addEventListener("submit", async (e) => 
     await loadAllData();
     renderUserList();
   } catch (err) {
-    toast(err.message || "Алдаа гарлаа -- Edge Function зөв байрлуулагдсан эсэхийг шалгана уу");
+    alert("АЛДАА:\n\n" + (err.message || "Тодорхойгүй алдаа") + "\n\n(Энэ мессежийг Claude-д хуулж илгээнэ үү)");
   }
 });
 async function resetUserPassword(userId, displayName) {
@@ -489,7 +489,7 @@ async function resetUserPassword(userId, displayName) {
     toast("Нууц үг шинэчлэгдлээ");
     await logActivity("password_reset", `${currentUser.display_name} ${displayName}-ийн нууц үгийг шинэчлэлээ`);
   } catch (err) {
-    toast(err.message || "Алдаа гарлаа");
+    alert("АЛДАА:\n\n" + (err.message || "Тодорхойгүй алдаа") + "\n\n(Энэ мессежийг Claude-д хуулж илгээнэ үү)");
   }
 }
 function renderUserList() {
