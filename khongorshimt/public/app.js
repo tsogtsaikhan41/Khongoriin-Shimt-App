@@ -185,7 +185,10 @@ async function flushQueue() {
   await loadAllData();
   renderCurrentScreen();
 }
-setInterval(() => { if (isOnline) flushQueue(); }, 20000);
+// Always attempt -- never gate on the isOnline flag itself, since that
+// flag can only be trusted as a result of trying, not as a precondition
+// for trying. This is what makes the app self-heal after a real fix.
+setInterval(() => { flushQueue(); }, 20000);
 
 /* ============================================================
    AUTH
@@ -311,7 +314,7 @@ let DATA = {
 };
 
 async function loadAllData() {
-  if (isOnline) {
+  {
     try {
       const tables = ["animals","slaughter_sessions","slaughter_items","transport_sessions",
         "transport_items","receiving_sessions","packagings","sales","profiles",
@@ -320,6 +323,10 @@ async function loadAllData() {
       for (const r of results) if (r.error) throw r.error;
       tables.forEach((t, i) => { DATA[t] = results[i].data || []; });
       await cacheSet("data_snapshot", DATA);
+      // A request just genuinely succeeded -- whatever we thought before,
+      // we're online now. Don't wait for a real browser online/offline
+      // event that may never fire if the connection never truly dropped.
+      if (!isOnline) { isOnline = true; setOnlineBar(); toast("Холболт сэргэлээ"); }
       return;
     } catch (err) {
       isOnline = false; setOnlineBar();
