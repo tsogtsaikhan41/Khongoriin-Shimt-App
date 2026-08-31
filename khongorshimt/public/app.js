@@ -187,7 +187,10 @@ async function execStep(step) {
     const { error } = await sb.from(step.table).update(step.payload).eq("id", step.match.id);
     if (error) throw error;
   } else {
-    const { error } = await sb.from(step.table).insert(step.payload);
+    // Upsert (not plain insert) with ignoreDuplicates: if a retry re-sends
+    // a row that already saved successfully on an earlier attempt, this
+    // is a harmless no-op instead of a 409 conflict on the primary key.
+    const { error } = await sb.from(step.table).upsert(step.payload, { onConflict: "id", ignoreDuplicates: true });
     if (error) throw error;
   }
 }
