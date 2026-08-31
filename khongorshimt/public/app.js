@@ -150,6 +150,15 @@ async function updatePendingBadge() {
 // Attempt a Supabase insert; if it fails for network reasons, queue it.
 // `steps` = array of {table, payload} executed in order (for compound ops
 // like a slaughter session + its per-animal items + animal status updates).
+// Errors like "permission denied" or "violates row-level security"
+// will NEVER succeed no matter how many times we retry -- treat these
+// as real errors to show the user, not as "offline, try again later".
+function isPermanentError(err) {
+  if (!err) return false;
+  const code = err.code || "";
+  const msg = (err.message || "").toLowerCase();
+  return code === "42501" || msg.includes("row-level security") || msg.includes("permission denied");
+}
 async function runSteps(steps) {
   if (!isOnline) {
     await queueAdd({ steps });
@@ -162,6 +171,10 @@ async function runSteps(steps) {
     }
     return { queued: false };
   } catch (err) {
+    if (isPermanentError(err)) {
+      alert("АЛДАА (зөвшөөрөл):\n\n" + (err.message || err) + "\n\nЭнэ бичлэг хадгалагдаагүй. Claude-д энэ мессежийг илгээнэ үү.");
+      return { queued: false, failed: true };
+    }
     await queueAdd({ steps });
     isOnline = false;
     setOnlineBar();
@@ -185,6 +198,13 @@ async function flushQueue() {
       for (const step of entry.steps) await execStep(step);
       await queueRemove(entry.id);
     } catch (err) {
+      if (isPermanentError(err)) {
+        // This one will never succeed -- drop it so it can't jam every
+        // future sync attempt behind it, and tell the user what happened.
+        await queueRemove(entry.id);
+        alert("АЛДАА (зөвшөөрөл) -- нэг хүлээгдэж байсан бичлэг хадгалагдсангүй:\n\n" + (err.message || err) + "\n\nClaude-д энэ мессежийг илгээнэ үү.");
+        continue;
+      }
       isOnline = false;
       setOnlineBar();
       return; // stop; will retry later
