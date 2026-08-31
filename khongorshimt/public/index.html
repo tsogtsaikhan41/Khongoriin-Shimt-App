@@ -196,23 +196,6 @@
     </div></div>
   </div>
 
-  <div class="screen" id="screen-context">
-    <div class="center-wrap"><div class="card">
-      <h2 class="section-title">Хаанаас ажиллаж байна вэ?</h2>
-      <p class="helper-text">Энэ сонголтоос хамаараад аль форм идэвхтэй байхыг тохируулна.</p>
-      <label>Ажиллах газар</label>
-      <select id="ctx-type" onchange="toggleCtxSoum()">
-        <option value="soum">Сум (Худалдан авалт, Мал бэлтгэл, Тээвэрлэлт)</option>
-        <option value="shop">Дэлгүүр (Хүлээн авалт, Баглаа боодол, Борлуулалт)</option>
-      </select>
-      <div id="ctx-soum-block">
-        <label>Аль сум</label>
-        <select id="ctx-soum"></select>
-      </div>
-      <button class="btn-primary" onclick="confirmContext()">Үргэлжлүүлэх</button>
-    </div></div>
-  </div>
-
   <div class="screen" id="screen-home">
     <div class="grid">
       <div class="tile wide dashboard" onclick="nav('dashboard')">
@@ -227,12 +210,18 @@
       <div class="tile" data-form="sale" onclick="tryNav('sale')"><div class="icon">6</div><div class="label">Борлуулалт</div><div class="sub">Хэрэглэгчид зарах</div></div>
       <div class="tile" data-form="inventory" onclick="tryNav('inventory')"><div class="icon">7</div><div class="label">Агуулах</div><div class="sub">Одоо байгаа мах</div></div>
       <div class="tile" onclick="nav('sync')"><div class="icon">8</div><div class="label">Excel татах</div><div class="sub">Тайлан гаргах</div></div>
+      <div class="tile" onclick="nav('chat')"><div class="icon">9</div><div class="label">Чат</div><div class="sub">Багийн мессеж</div></div>
       <div class="tile wide admin" id="tile-admin" style="display:none;" onclick="nav('admin')">
-        <div><div class="label">Хэрэглэгч удирдах</div><div class="sub">Эрх нэмэх (Супер Админ)</div></div>
+        <div><div class="label">Хэрэглэгч удирдах</div><div class="sub">Эрх нэмэх, нууц үг шинэчлэх</div></div>
         <div style="font-size:24px;color:#fff;">-></div>
       </div>
-      <div class="tile wide" style="background:transparent;border:none;box-shadow:none;justify-content:center;" onclick="nav('context-switch')">
-        <div class="sub" style="text-align:center;width:100%;">Ажиллах газар солих</div>
+      <div class="tile wide admin" id="tile-requests" style="display:none;background:var(--primary);" onclick="nav('requests')">
+        <div><div class="label">Засварын хүсэлтүүд</div><div class="sub" id="requests-badge">Хүлээгдэж буй хүсэлт</div></div>
+        <div style="font-size:24px;color:#fff;">-></div>
+      </div>
+      <div class="tile wide admin" id="tile-activity" style="display:none;background:var(--accent);" onclick="nav('activity')">
+        <div><div class="label">Үйл ажиллагааны түүх</div><div class="sub">Хэн, юу хийснийг харах</div></div>
+        <div style="font-size:24px;color:#fff;">-></div>
       </div>
     </div>
   </div>
@@ -245,11 +234,49 @@
         <label>Нэвтрэх нэр</label><input type="text" name="username" required autocomplete="off">
         <label>Нууц үг</label><input type="password" name="password" required minlength="6">
         <label>Эрх</label>
-        <select name="role"><option value="staff">Ажилтан</option><option value="admin">Супер Админ</option></select>
+        <select name="role" id="au-role" onchange="toggleAddUserFields()"><option value="staff">Ажилтан</option><option value="admin">Супер Админ</option></select>
+        <div id="au-context-block">
+          <label>Хаана ажиллах вэ</label>
+          <select id="au-context-type" onchange="toggleAddUserSoum()">
+            <option value="soum">Сум</option>
+            <option value="shop">Дэлгүүр</option>
+          </select>
+          <div id="au-soum-block">
+            <label>Аль сум</label>
+            <select id="au-soum"></select>
+          </div>
+        </div>
         <button type="submit" class="btn-primary">Хэрэглэгч нэмэх</button>
       </form>
     </div>
     <div id="user-list"></div>
+  </div>
+
+  <!-- ACTIVITY LOG -->
+  <div class="screen" id="screen-activity">
+    <h2 class="section-title">Үйл ажиллагааны түүх</h2>
+    <div id="activity-list"></div>
+  </div>
+
+  <!-- CHANGE REQUESTS -->
+  <div class="screen" id="screen-requests">
+    <h2 class="section-title">Засварын хүсэлтүүд</h2>
+    <div id="requests-list"></div>
+  </div>
+
+  <!-- CHAT -->
+  <div class="screen" id="screen-chat">
+    <h2 class="section-title">Чат</h2>
+    <div id="chat-messages" style="margin-bottom:14px;"></div>
+    <div class="card" style="position:sticky;bottom:12px;">
+      <textarea id="chat-input" rows="2" placeholder="Мессеж бичих..."></textarea>
+      <button class="btn-primary" onclick="sendChatMessage()">Илгээх</button>
+    </div>
+  </div>
+
+  <!-- TICKET DETAIL MODAL -->
+  <div id="ticket-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;align-items:center;justify-content:center;padding:16px;">
+    <div class="card" style="max-width:480px;width:100%;max-height:80vh;overflow-y:auto;" id="ticket-modal-body"></div>
   </div>
 
   <!-- PURCHASE -->

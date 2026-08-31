@@ -236,33 +236,49 @@ document.getElementById("form-login").addEventListener("submit", async (e) => {
 });
 
 async function afterLogin() {
-  const { data: { user } } = await sb.auth.getUser();
-  const { data: profile, error } = await sb.from("profiles").select("*").eq("id", user.id).single();
-  if (error || !profile) { toast("Профайл олдсонгүй"); return; }
+  let profile = null;
+  try {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) throw new Error("no user");
+    const { data, error } = await sb.from("profiles").select("*").eq("id", user.id).single();
+    if (error) throw error;
+    profile = data;
+    await cacheSet("session_profile", profile);
+  } catch (err) {
+    // Supabase unreachable (e.g. token needed refreshing but we're offline).
+    // Fall back to the last profile we know logged in on this device, so
+    // losing signal mid-session never locks someone out of their own app.
+    profile = await cacheGet("session_profile");
+    if (!profile) { toast("Профайл ачаалах боломжгүй -- интернэтээ шалгаад дахин оролдоно уу"); return; }
+    isOnline = false;
+    setOnlineBar();
+    toast("Офлайн горимоор нэвтэрлээ (өмнө нэвтэрсэн профайл ашиглаж байна)");
+  }
   currentUser = profile;
-  await cacheSet("session_profile", profile);
 
   document.getElementById("topbar").style.display = "flex";
   document.getElementById("userLabel").innerHTML =
     `${profile.display_name} <span class="role-badge">${profile.role === "admin" ? "СУПЕР АДМИН" : "Ажилтан"}</span>`;
   document.getElementById("tile-admin").style.display = profile.role === "admin" ? "flex" : "none";
+  document.getElementById("tile-requests").style.display = profile.role === "admin" ? "flex" : "none";
+  document.getElementById("tile-activity").style.display = profile.role === "admin" ? "flex" : "none";
 
-  const savedCtx = localStorage.getItem("ks_context");
-  if (profile.role === "admin") {
-    workContext = savedCtx ? JSON.parse(savedCtx) : { type: "soum", soum: SOUMS[0].name };
-    await loadAllData();
-    nav("home");
-  } else if (savedCtx) {
-    workContext = JSON.parse(savedCtx);
-    await loadAllData();
-    nav("home");
-  } else {
-    showScreen("context");
-    initContextScreen();
-  }
+  // Access is appointed by the admin at account-creation time -- no more
+  // self-service picker. Admin has no fixed context (sees everything);
+  // staff's context comes straight from their profile row.
+  workContext = profile.role === "admin"
+    ? { type: "admin", soum: SOUMS[0].name }
+    : { type: profile.context_type, soum: profile.soum };
+
+  await loadAllData();
+  nav("home");
 }
 
 function logout() {
+  if (!isOnline) {
+    const proceed = confirm("Та одоо интернэтгүй байна. Гарвал дахин холбогдох хүртэл нэвтэрч чадахгүй болно. Гарах уу?");
+    if (!proceed) return;
+  }
   sb.auth.signOut();
   currentUser = null;
   document.getElementById("topbar").style.display = "none";
@@ -270,23 +286,19 @@ function logout() {
   showScreen("login");
 }
 
-function initContextScreen() {
-  const sel = document.getElementById("ctx-soum");
-  sel.innerHTML = SOUMS.map((s) => `<option value="${s.name}">${s.name}</option>`).join("");
-  toggleCtxSoum();
+/* ============================================================
+   ACTIVITY LOG -- lightweight helper called from key actions
+   ============================================================ */
+async function logActivity(action, description) {
+  const payload = {
+    id: uid(), actor_id: currentUser.id, actor_name: currentUser.display_name,
+    action, description, created_at: new Date().toISOString()
+  };
+  DATA.activity_log = DATA.activity_log || [];
+  DATA.activity_log.push(payload);
+  await runSteps([{ table: "activity_log", payload }]);
 }
-function toggleCtxSoum() {
-  document.getElementById("ctx-soum-block").style.display =
-    document.getElementById("ctx-type").value === "soum" ? "block" : "none";
-}
-async function confirmContext() {
-  const type = document.getElementById("ctx-type").value;
-  const soum = type === "soum" ? document.getElementById("ctx-soum").value : null;
-  workContext = { type, soum };
-  localStorage.setItem("ks_context", JSON.stringify(workContext));
-  await loadAllData();
-  nav("home");
-}
+
 
 /* ============================================================
    DATA LOADING (cached in IndexedDB for offline reads)
@@ -294,14 +306,16 @@ async function confirmContext() {
 let DATA = {
   animals: [], slaughter_sessions: [], slaughter_items: [],
   transport_sessions: [], transport_items: [], receiving_sessions: [],
-  packagings: [], sales: [], profiles: []
+  packagings: [], sales: [], profiles: [],
+  activity_log: [], messages: [], change_requests: []
 };
 
 async function loadAllData() {
   if (isOnline) {
     try {
       const tables = ["animals","slaughter_sessions","slaughter_items","transport_sessions",
-        "transport_items","receiving_sessions","packagings","sales","profiles"];
+        "transport_items","receiving_sessions","packagings","sales","profiles",
+        "activity_log","messages","change_requests"];
       const results = await Promise.all(tables.map(t => sb.from(t).select("*")));
       for (const r of results) if (r.error) throw r.error;
       tables.forEach((t, i) => { DATA[t] = results[i].data || []; });
@@ -357,13 +371,8 @@ function showScreen(name) {
 }
 let currentScreen = "home";
 async function nav(screen) {
-  if (screen === "context-switch") {
-    showScreen("context");
-    initContextScreen();
-    return;
-  }
   currentScreen = screen;
-  if (!["home", "admin", "context"].includes(screen) && isOnline) {
+  if (!["home", "admin"].includes(screen) && isOnline) {
     await loadAllData();
   }
   showScreen(screen);
@@ -375,7 +384,7 @@ async function nav(screen) {
 function formAllowed(formName) {
   if (currentUser && currentUser.role === "admin") return true;
   if (formName === "inventory") return true;
-  if (!workContext) return false;
+  if (!workContext || !workContext.type) return false;
   return CONTEXT_FORMS[workContext.type].includes(formName);
 }
 function tryNav(formName) {
@@ -402,44 +411,202 @@ function renderCurrentScreen() {
   if (currentScreen === "inventory") renderInventory();
   if (currentScreen === "dashboard") renderDashboard();
   if (currentScreen === "admin") renderUserList();
+  if (currentScreen === "activity") renderActivityLog();
+  if (currentScreen === "requests") renderChangeRequests();
+  if (currentScreen === "chat") renderChat();
 }
 function setDefaultDates() {
   document.querySelectorAll('input[type=date]').forEach((inp) => { if (!inp.value) inp.value = todayStr(); });
 }
 
 /* ============================================================
-   ADMIN: USER MANAGEMENT
+   ADMIN: USER MANAGEMENT (via secure Edge Function -- no email)
    ============================================================ */
+function toggleAddUserFields() {
+  const isAdmin = document.getElementById("au-role").value === "admin";
+  document.getElementById("au-context-block").style.display = isAdmin ? "none" : "block";
+}
+function toggleAddUserSoum() {
+  document.getElementById("au-soum-block").style.display =
+    document.getElementById("au-context-type").value === "soum" ? "block" : "none";
+}
+function initAddUserSoumOptions() {
+  const sel = document.getElementById("au-soum");
+  if (sel && !sel.dataset.filled) {
+    sel.innerHTML = SOUMS.map((s) => `<option value="${s.name}">${s.name}</option>`).join("");
+    sel.dataset.filled = "1";
+  }
+}
 document.getElementById("form-adduser").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const username = fd.get("username").trim().toLowerCase();
+  const role = fd.get("role");
+  const contextType = document.getElementById("au-context-type").value;
+  const soum = document.getElementById("au-soum").value;
   try {
-    const { data: signData, error: signErr } = await sb.auth.signUp({
-      email: emailFor(username), password: fd.get("password")
+    const { data, error } = await sb.functions.invoke("admin-users", {
+      body: { action: "create_user", username, password: fd.get("password"),
+        displayName: fd.get("displayName"), role, contextType, soum }
     });
-    if (signErr) throw signErr;
-    const { error: profErr } = await sb.from("profiles").insert({
-      id: signData.user.id, username, display_name: fd.get("displayName"), role: fd.get("role")
-    });
-    if (profErr) throw profErr;
+    if (error) throw error;
+    if (data && data.error) throw new Error(data.error);
     toast("Хэрэглэгч нэмэгдлээ");
+    await logActivity("user_created", `${currentUser.display_name} шинэ хэрэглэгч (${fd.get("displayName")}) нэмлээ`);
     e.target.reset();
+    toggleAddUserFields();
     await loadAllData();
     renderUserList();
   } catch (err) {
-    toast(err.message || "Алдаа гарлаа");
+    toast(err.message || "Алдаа гарлаа -- Edge Function зөв байрлуулагдсан эсэхийг шалгана уу");
   }
 });
+async function resetUserPassword(userId, displayName) {
+  const newPass = prompt(`${displayName}-ийн шинэ нууц үгийг оруулна уу (доод тал нь 6 тэмдэгт):`);
+  if (!newPass || newPass.length < 6) { if (newPass !== null) toast("Хамгийн багадаа 6 тэмдэгт байх ёстой"); return; }
+  try {
+    const { data, error } = await sb.functions.invoke("admin-users", {
+      body: { action: "reset_password", userId, newPassword: newPass }
+    });
+    if (error) throw error;
+    if (data && data.error) throw new Error(data.error);
+    toast("Нууц үг шинэчлэгдлээ");
+    await logActivity("password_reset", `${currentUser.display_name} ${displayName}-ийн нууц үгийг шинэчлэлээ`);
+  } catch (err) {
+    toast(err.message || "Алдаа гарлаа");
+  }
+}
 function renderUserList() {
+  initAddUserSoumOptions();
   const el = document.getElementById("user-list");
   el.innerHTML = DATA.profiles.map((u) => `
     <div class="list-item">
       <div class="top-row"><div class="batch">${u.display_name} ${u.role === "admin" ? "(Админ)" : ""}</div><div class="date">${u.username}</div></div>
-      <div class="details">${u.role === "admin" ? "Супер Админ" : "Ажилтан -- ажиллах газраа өөрөө сонгоно"}</div>
+      <div class="details">${u.role === "admin" ? "Супер Админ" : "Ажилтан -- " + (u.context_type === "shop" ? "Дэлгүүр" : "Сум: " + (u.soum || "--"))}</div>
+      <div class="actions"><button class="btn-ghost" onclick="resetUserPassword('${u.id}','${u.display_name}')">Нууц үг шинэчлэх</button></div>
     </div>
   `).join("") || `<div class="empty-state"><div class="big">--</div>Хэрэглэгч алга</div>`;
 }
+
+/* ============================================================
+   ACTIVITY LOG, CHANGE REQUESTS, CHAT
+   ============================================================ */
+function renderActivityLog() {
+  const el = document.getElementById("activity-list");
+  const items = (DATA.activity_log || []).slice().reverse();
+  el.innerHTML = items.map(a => `
+    <div class="list-item">
+      <div class="top-row"><div class="batch">${a.actor_name}</div><div class="date">${new Date(a.created_at).toLocaleString("mn-MN")}</div></div>
+      <div class="details">${a.description}</div>
+    </div>
+  `).join("") || `<div class="empty-state"><div class="big">--</div>Түүх алга байна</div>`;
+}
+
+const EDITABLE_FIELDS = {
+  animals: [["live_weight_kg", "Амьд жин (кг)", "number"], ["price_per_kg", "Үнэ/кг (₮)", "number"], ["herder_name", "Малчны нэр", "text"], ["animal_type", "Мал төрөл", "text"]],
+  slaughter_items: [["carcass_weight_kg", "Гулуузын жин (кг)", "number"]],
+  transport_items: [["weight_sent_kg", "Илгээсэн жин (кг)", "number"]],
+  receiving_sessions: [["total_weight_received", "Хүлээн авсан жин (кг)", "number"]],
+  packagings: [["weight_kg", "Жин (кг)", "number"], ["packaging_cost", "Зардал (₮)", "number"]],
+  sales: [["qty", "Тоо хэмжээ", "number"], ["unit_price", "Нэгжийн үнэ (₮)", "number"]]
+};
+function openRequestChange(tableName, recordId) {
+  const fields = EDITABLE_FIELDS[tableName];
+  if (!fields) { toast("Энэ бичлэгийг засах боломжгүй"); return; }
+  const record = DATA[tableName].find(r => r.id === recordId);
+  if (!record) return;
+  const body = document.getElementById("ticket-modal-body");
+  body.innerHTML = `
+    <h2 class="section-title">Засвар хүсэх</h2>
+    <label>Аль талбарыг засах вэ</label>
+    <select id="rc-field">${fields.map(([key, label]) => `<option value="${key}">${label} (одоо: ${record[key]})</option>`).join("")}</select>
+    <label>Шинэ утга</label>
+    <input type="text" id="rc-newvalue">
+    <label>Шалтгаан (заавал биш)</label>
+    <textarea id="rc-reason" rows="2"></textarea>
+    <button class="btn-primary" onclick="submitChangeRequest('${tableName}','${recordId}')">Хүсэлт илгээх</button>
+    <button class="btn-ghost" style="width:100%;margin-top:8px;" onclick="closeTicketModal()">Болих</button>
+  `;
+  document.getElementById("ticket-modal").style.display = "flex";
+}
+function closeTicketModal() { document.getElementById("ticket-modal").style.display = "none"; }
+async function submitChangeRequest(tableName, recordId) {
+  const field = document.getElementById("rc-field").value;
+  const newValue = document.getElementById("rc-newvalue").value;
+  const reason = document.getElementById("rc-reason").value;
+  if (!newValue) { toast("Шинэ утгаа оруулна уу"); return; }
+  const record = DATA[tableName].find(r => r.id === recordId);
+  const payload = {
+    id: uid(), table_name: tableName, record_id: recordId, field_name: field,
+    old_value: String(record ? record[field] : ""), new_value: newValue, reason,
+    requested_by: currentUser.id, requested_by_name: currentUser.display_name,
+    status: "pending", created_at: new Date().toISOString()
+  };
+  DATA.change_requests = DATA.change_requests || [];
+  DATA.change_requests.push(payload);
+  await runSteps([{ table: "change_requests", payload }]);
+  await logActivity("change_requested", `${currentUser.display_name} засвар хүслээ: ${field} -> ${newValue}`);
+  toast("Хүсэлт илгээгдлээ, Супер Админ хянана");
+  closeTicketModal();
+}
+function renderChangeRequests() {
+  const el = document.getElementById("requests-list");
+  const items = (DATA.change_requests || []).filter(r => r.status === "pending").slice().reverse();
+  el.innerHTML = items.map(r => `
+    <div class="list-item">
+      <div class="top-row"><div class="batch">${r.table_name} / ${r.field_name}</div><div class="date">${new Date(r.created_at).toLocaleString("mn-MN")}</div></div>
+      <div class="details">${r.requested_by_name}: "${r.old_value}" -> "${r.new_value}"${r.reason ? " (" + r.reason + ")" : ""}</div>
+      <div class="actions">
+        <button class="btn-primary" style="width:auto;margin:0;padding:8px 14px;" onclick="reviewChangeRequest('${r.id}', true)">Зөвшөөрөх</button>
+        <button class="btn-danger" onclick="reviewChangeRequest('${r.id}', false)">Татгалзах</button>
+      </div>
+    </div>
+  `).join("") || `<div class="empty-state"><div class="big">--</div>Хүлээгдэж буй хүсэлт алга</div>`;
+}
+async function reviewChangeRequest(reqId, approve) {
+  const cr = (DATA.change_requests || []).find(r => r.id === reqId);
+  if (!cr) return;
+  const steps = [];
+  if (approve) {
+    const fieldDef = (EDITABLE_FIELDS[cr.table_name] || []).find(f => f[0] === cr.field_name);
+    const parsedValue = fieldDef && fieldDef[2] === "number" ? parseFloat(cr.new_value) : cr.new_value;
+    steps.push({ table: cr.table_name, op: "update", match: { id: cr.record_id }, payload: { [cr.field_name]: parsedValue } });
+    const rec = DATA[cr.table_name].find(r => r.id === cr.record_id);
+    if (rec) rec[cr.field_name] = parsedValue;
+  }
+  cr.status = approve ? "approved" : "rejected";
+  cr.reviewed_by = currentUser.id; cr.reviewed_by_name = currentUser.display_name; cr.reviewed_at = new Date().toISOString();
+  steps.push({ table: "change_requests", op: "update", match: { id: reqId },
+    payload: { status: cr.status, reviewed_by: currentUser.id, reviewed_by_name: currentUser.display_name, reviewed_at: cr.reviewed_at } });
+  await runSteps(steps);
+  await logActivity(approve ? "change_approved" : "change_rejected", `${currentUser.display_name} ${cr.requested_by_name}-ийн хүсэлтийг ${approve ? "зөвшөөрлөө" : "татгалзлаа"}`);
+  toast(approve ? "Зөвшөөрөгдлөө" : "Татгалзлаа");
+  renderChangeRequests();
+}
+
+async function renderChat() {
+  const el = document.getElementById("chat-messages");
+  const items = (DATA.messages || []).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  el.innerHTML = items.map(m => `
+    <div class="list-item">
+      <div class="top-row"><div class="batch">${m.sender_name}</div><div class="date">${new Date(m.created_at).toLocaleString("mn-MN")}</div></div>
+      <div class="details">${m.body}</div>
+    </div>
+  `).join("") || `<div class="empty-state"><div class="big">--</div>Мессеж алга байна, эхнийхийг бичээрэй</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+async function sendChatMessage() {
+  const input = document.getElementById("chat-input");
+  const body = input.value.trim();
+  if (!body) return;
+  const payload = { id: uid(), sender_id: currentUser.id, sender_name: currentUser.display_name, body, created_at: new Date().toISOString() };
+  DATA.messages = DATA.messages || [];
+  DATA.messages.push(payload);
+  await runSteps([{ table: "messages", payload }]);
+  input.value = "";
+  renderChat();
+}
+setInterval(() => { if (isOnline && currentScreen === "chat") { loadAllData().then(renderChat); } }, 15000);
 
 /* ============================================================
    PURCHASE
@@ -476,6 +643,7 @@ document.getElementById("form-purchase").addEventListener("submit", async (e) =>
   DATA.animals.push(payload); // optimistic local update
   await runSteps([{ table: "animals", payload }]);
   toast("Хадгалагдлаа: " + code);
+  await logActivity("purchase", currentUser.display_name + " мал худалдан авлаа: " + code);
   e.target.reset();
   document.getElementById("p-total").textContent = "0 ₮";
   setDefaultDates();
@@ -536,6 +704,7 @@ function renderPurchaseList(filterText) {
       <div class="top-row"><div class="batch">${a.animal_code}</div><div class="date">${a.purchase_date}</div></div>
       <div class="details">${a.soum} · ${a.herder_name} · ${a.animal_type} · ${a.live_weight_kg} кг · ${fmt(a.price_per_kg)}₮/кг · нийт ${fmt(a.total_cost)}₮</div>
       <div class="details">Худ. авсан: ${a.purchasing_agent}${a.note ? " · " + a.note : ""} · төлөв: ${a.status}</div>
+      <div class="actions">${editOrRequestButton("animals", a.id)}</div>
     </div>
   `).join("");
 }
@@ -602,6 +771,7 @@ async function submitSlaughter() {
 
   await runSteps(steps);
   toast("Хадгалагдлаа -- " + items.length + " мал");
+  await logActivity("slaughter", currentUser.display_name + " " + items.length + " малын бэлтгэл хийлээ");
   document.getElementById("s-totalcost").value = "";
   document.getElementById("s-note").value = "";
   document.getElementById("s-costshare").textContent = "--";
@@ -678,6 +848,7 @@ async function submitTransport() {
 
   await runSteps(steps);
   toast("Хадгалагдлаа -- " + checked.length + " мал");
+  await logActivity("transport", currentUser.display_name + " " + checked.length + " малыг тээвэрлэлээ");
   document.getElementById("t-totalcost").value = "";
   document.getElementById("t-note").value = "";
   document.getElementById("t-totalweight").textContent = "0 кг";
@@ -735,6 +906,7 @@ async function submitReceiving() {
 
   await runSteps(steps);
   toast("Хадгалагдлаа");
+  await logActivity("receiving", currentUser.display_name + " хүлээн авалт бүртгэлээ");
   document.getElementById("r-weight").value = "";
   document.getElementById("r-note").value = "";
   document.getElementById("r-loss").textContent = "--";
@@ -832,6 +1004,7 @@ async function submitPackaging() {
   DATA.packagings.push(payload);
   await runSteps([{ table: "packagings", payload }]);
   toast("Хадгалагдлаа");
+  await logActivity("packaging", currentUser.display_name + " баглаа боодол бэлдлээ");
   document.getElementById("pk-weight").value = "";
   document.getElementById("pk-qty").value = "";
   document.getElementById("pk-totalweight").textContent = "0 кг";
@@ -881,6 +1054,7 @@ async function submitSale() {
   DATA.sales.push(payload);
   await runSteps([{ table: "sales", payload }]);
   toast("Хадгалагдлаа");
+  await logActivity("sale", currentUser.display_name + " борлуулалт бүртгэлээ");
   document.getElementById("sl-qty").value = "";
   document.getElementById("sl-price").value = "";
   document.getElementById("sl-total").textContent = "0 ₮";
@@ -893,6 +1067,32 @@ async function submitSale() {
 /* ============================================================
    GENERIC LIST RENDERING (Мал бэлтгэл / Тээвэрлэлт / Хүлээн авалт / Баглаа / Борлуулалт)
    ============================================================ */
+async function quickAdminEdit(tableName, recordId) {
+  const fields = EDITABLE_FIELDS[tableName];
+  if (!fields) { toast("Энэ бичлэгийг засах боломжгүй"); return; }
+  const record = DATA[tableName].find(r => r.id === recordId);
+  if (!record) return;
+  const fieldList = fields.map(([key, label], i) => `${i + 1}. ${label} (одоо: ${record[key]})`).join("\n");
+  const choice = prompt(`Аль талбарыг засах вэ?\n${fieldList}\n\nДугаараа оруулна уу:`);
+  const idx = parseInt(choice) - 1;
+  if (isNaN(idx) || !fields[idx]) return;
+  const [key, label, type] = fields[idx];
+  const newValRaw = prompt(`${label} -- шинэ утга (одоо: ${record[key]}):`);
+  if (newValRaw === null || newValRaw === "") return;
+  const newVal = type === "number" ? parseFloat(newValRaw) : newValRaw;
+  record[key] = newVal;
+  await runSteps([{ table: tableName, op: "update", match: { id: recordId }, payload: { [key]: newVal } }]);
+  await logActivity("direct_edit", `${currentUser.display_name} засварлав: ${label} -> ${newVal}`);
+  toast("Шинэчлэгдлээ");
+  renderCurrentScreen();
+}
+function editOrRequestButton(tableName, recordId) {
+  if (!EDITABLE_FIELDS[tableName]) return "";
+  if (currentUser.role === "admin") {
+    return `<button class="btn-ghost" onclick="quickAdminEdit('${tableName}','${recordId}')">Засах</button>`;
+  }
+  return `<button class="btn-ghost" onclick="openRequestChange('${tableName}','${recordId}')">Засвар хүсэх</button>`;
+}
 function renderList(key, filter) {
   const containers = {
     slaughter: "list-slaughter", transport: "list-transport", receiving: "list-receiving",
@@ -908,10 +1108,13 @@ function renderList(key, filter) {
       return `<div class="list-item">
         <div class="top-row"><div class="batch">${s.location || "Мал бэлтгэл"}</div><div class="date">${s.session_date}</div></div>
         <div class="details">${items.length} мал · Нийт зардал ${fmt(s.total_cost)}₮ · Толгой тутам ${fmt(s.total_cost / (items.length || 1))}₮</div>
-        <div class="details">${items.map(i => {
+        ${items.map(i => {
           const a = DATA.animals.find(x => x.id === i.animal_id);
-          return `${a ? a.animal_code : "?"} (${i.carcass_weight_kg}кг, ${i.yield_pct ? i.yield_pct.toFixed(1) + "%" : "--"})`;
-        }).join(", ")}</div>
+          return `<div class="details" style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+            <span>${a ? a.animal_code : "?"} (${i.carcass_weight_kg}кг, ${i.yield_pct ? i.yield_pct.toFixed(1) + "%" : "--"})</span>
+            ${editOrRequestButton("slaughter_items", i.id)}
+          </div>`;
+        }).join("")}
       </div>`;
     }).join("");
   } else if (key === "transport") {
@@ -932,6 +1135,7 @@ function renderList(key, filter) {
       return `<div class="list-item">
         <div class="top-row"><div class="batch">Хүлээн авалт</div><div class="date">${r.received_date}</div></div>
         <div class="details">${fmt(r.total_weight_received)}кг хүлээн авсан · Гарз ${fmt(loss)}кг</div>
+        <div class="actions">${editOrRequestButton("receiving_sessions", r.id)}</div>
       </div>`;
     }).join("");
   } else if (key === "packaging") {
@@ -942,6 +1146,7 @@ function renderList(key, filter) {
       return `<div class="list-item">
         <div class="top-row"><div class="batch">${p.product_type}</div><div class="date">${p.packaging_date}</div></div>
         <div class="details">${fmt(p.weight_kg)}кг · Зардал ${fmt(p.packaging_cost)}₮ · Үлдэгдэл ${fmt(packagingRemaining(p))} ${p.unit}${src ? " · Эх сурвалж: " + src.product_type : ""}${p.note ? " · " + p.note : ""}</div>
+        <div class="actions">${editOrRequestButton("packagings", p.id)}</div>
       </div>`;
     }).join("");
   } else if (key === "sale") {
@@ -952,6 +1157,7 @@ function renderList(key, filter) {
       return `<div class="list-item">
         <div class="top-row"><div class="batch">${p ? p.product_type : "?"}</div><div class="date">${s.sale_date}</div></div>
         <div class="details">${s.qty} × ${fmt(s.unit_price)}₮ = ${fmt(s.total)}₮${s.customer_name ? " · " + s.customer_name : ""}${s.customer_phone ? " · ☎" + s.customer_phone : ""}</div>
+        <div class="actions">${editOrRequestButton("sales", s.id)}</div>
       </div>`;
     }).join("");
   }
@@ -1146,8 +1352,16 @@ async function init() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) {
+  let session = null;
+  try {
+    const res = await sb.auth.getSession();
+    session = res.data.session;
+  } catch (err) { /* Supabase unreachable -- fall through to cache check below */ }
+
+  const cachedProfile = await cacheGet("session_profile");
+  if (session || (cachedProfile && !navigator.onLine)) {
+    // Either a live session, or we're offline but this device has logged
+    // in before -- trust the cache rather than lock the person out.
     await afterLogin();
     return;
   }
@@ -1157,7 +1371,8 @@ async function init() {
     if (error) throw error;
     showScreen(count === 0 ? "setup" : "login");
   } catch (err) {
-    showScreen("login"); // if offline with no session, nothing to do but wait for connection
+    if (cachedProfile) { await afterLogin(); }
+    else showScreen("login"); // truly offline with no prior login on this device -- nothing to do but wait for connection
   }
 }
 init();
