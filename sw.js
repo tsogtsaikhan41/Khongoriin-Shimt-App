@@ -30,7 +30,7 @@ const LOCAL_ASSETS = [
 
 const CDN = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-  'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js'
+  'https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js'
 ];
 
 self.addEventListener('install', event => {
