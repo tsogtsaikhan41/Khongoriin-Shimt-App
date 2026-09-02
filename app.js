@@ -232,7 +232,16 @@ async function refreshAll(){await loadLocal();const active=location.hash.slice(1
 function showQR(code){
  const url=new URL('./public.html',location.href);url.searchParams.set('code',code);
  const root=document.getElementById('modal-root');root.innerHTML=`<div class="modal-back"><div class="modal"><div class="modal-head"><b>QR — ${esc(code)}</b><button class="x" onclick="document.getElementById('modal-root').innerHTML=''">×</button></div><div id="qrBox" style="text-align:center;padding:18px"></div><div class="helper" style="word-break:break-all">${esc(url.href)}</div><div class="actions" style="margin-top:14px"><button class="btn-secondary" onclick="window.open('${url.href.replace(/'/g,"%27")}','_blank')">Нийтийн хуудас нээх</button><button class="btn-secondary" onclick="window.print()">Хэвлэх</button></div></div></div>`;
- if(window.QRCode){QRCode.toCanvas(document.getElementById('qrBox'),url.href,{width:220,margin:2},()=>{});}
+ if(window.QRCode){
+   const box=document.getElementById('qrBox');
+   const cv=document.createElement('canvas');
+   box.appendChild(cv);
+   QRCode.toCanvas(cv,url.href,{width:220,margin:2},err=>{
+     if(err){console.error('[qr] failed',err);box.innerHTML='<div class="warn">QR үүсгэхэд алдаа гарлаа</div>'}
+   });
+ }else{
+   document.getElementById('qrBox').innerHTML='<div class="warn">QR сан ачаалагдсангүй</div>';
+ }
 }
 window.showQR=showQR;
 window.navigate=navigate;window.renderHome=renderHome;window.syncNow=syncNow;window.refreshAll=refreshAll;
