@@ -81,7 +81,7 @@ async function ensureAuth(){
     let cached=null;
     try{cached=JSON.parse(localStorage.getItem(cachedKey)||'null')}catch(_){}
     if(cached){ profile=cached; return true; }
-    renderError('Профайл уншихад алдаа гарлаа', (err&&err.message)||'Сүлжээгүй байна. Нэг удаа онлайн орж нэвтэрнэ үү.');
+    renderError('Профайл уншихад алдаа гарлаа', (err&&errMn(err))||'Сүлжээгүй байна. Нэг удаа онлайн орж нэвтэрнэ үү.');
     return false;
   }
 }
@@ -92,7 +92,7 @@ function renderSetup(){
 function renderError(title,msg){$('app').innerHTML=`<main><div class="card"><h2 class="section-title">⚠️ ${esc(title)}</h2><p>${esc(msg)}</p><button class="btn-secondary" onclick="location.reload()">Дахин оролдох</button></div></main>`}
 function renderLogin(){
   $('app').innerHTML=`<main><div class="card" style="max-width:420px;margin:50px auto"><div style="font-size:32px">🐑</div><h2 class="section-title">Хонгорын Шимт</h2><p class="section-note">Махны мөшгөлт ба үйл ажиллагаа</p><form id="loginForm"><label>Имэйл</label><input type="email" name="email" required autocomplete="username"><label>Нууц үг</label><input type="password" name="password" required autocomplete="current-password"><button class="btn-primary">Нэвтрэх</button></form></div></main>`;
-  $('loginForm').onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const r=await supa().auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(r.error)throw r.error;await boot()}catch(err){toast('Нэвтрэхэд алдаа: '+err.message)}};
+  $('loginForm').onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const r=await supa().auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(r.error)throw r.error;await boot()}catch(err){toast('Нэвтрэхэд алдаа: '+errMn(err))}};
 }
 
 function shell(){
@@ -200,7 +200,7 @@ function renderProcessing(){
 async function createProcessing(fd){
  const aid=String(fd.get('animal_id')), a=cache.animals.find(x=>x.id===aid);if(!a)return toast('Амьтан сонгоно уу');if(a._sync_state!=='synced')return toast('Энэ амьтны худалдан авалт төв сервертэй синк болоогүй байна');
  const payload={processing:{id:uuid(),animal_id:aid,processing_date:String(fd.get('date')),location:String(fd.get('location')||''),responsible_user:session.user.id,processing_cost:num(fd.get('cost')),note:fd.get('note')||null},outputs:[{id:uuid(),animal_id:aid,material_type:'MEAT',quantity_kg:num(fd.get('meat_kg'))},{id:uuid(),animal_id:aid,material_type:'BYPRODUCT',quantity_kg:num(fd.get('byproduct_kg'))}]};
- if(isOnline()){try{await rpc('create_processing_bundle',{p_payload:payload});await pullData();toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+err.message);return}}
+ if(isOnline()){try{await rpc('create_processing_bundle',{p_payload:payload});await pullData();toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+errMn(err));return}}
  else {
    const proc={...payload.processing,_sync_state:'pending'}; await saveLocalRecord('processing_events',proc,'pending');
    cache.processing_events.push(proc);
@@ -219,7 +219,7 @@ function renderTransport(){
 async function createTransport(fd){
  const mid=String(fd.get('material_id')),m=cache.materials.find(x=>x.id===mid);const w=num(fd.get('weight'));if(!m||w<=0)return toast('Материал/жин буруу');if(w>num(m.current_available)+.0001)return toast('Үлдэгдлээс их байна');
  const payload={transport:{id:uuid(),transport_date:String(fd.get('date')),source_location:m.location_type,destination_location:'SHOP',responsible_user:session.user.id,cost:num(fd.get('cost')),note:fd.get('note')||null},items:[{id:uuid(),source_material_id:mid,animal_id:m.animal_id,quantity_sent_kg:w}]};
- if(isOnline()){try{await rpc('create_transport_bundle',{p_payload:payload});await pullData();toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+err.message);return}}else{await addOutbox('transport_create',payload);toast('Offline хадгалаглаа — дараа синк хийнэ')}
+ if(isOnline()){try{await rpc('create_transport_bundle',{p_payload:payload});await pullData();toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+errMn(err));return}}else{await addOutbox('transport_create',payload);toast('Offline хадгалаглаа — дараа синк хийнэ')}
  renderTransport();
 }
 
@@ -233,7 +233,7 @@ function transportLabel(t){
 function renderReceiving(){
  const ts=cache.transports.filter(t=>t.destination_location==='SHOP'&&!t.is_received).sort((a,b)=>b.transport_date?.localeCompare(a.transport_date||'')||0);
  $('view').innerHTML=formCard(`<form id="receivingForm"><label>Тээвэр</label><select name="transport_id" required>${ts.map(t=>`<option value="${t.id}">${esc(transportLabel(t))}</option>`).join('')||'<option>Тээвэр алга</option>'}</select><label>Хүлээн авсан огноо</label><input type="date" name="date" value="${today()}" required><label>Хүлээн авсан жин (кг)</label><input type="number" name="weight" min="0" step="0.1" required><div class="calc-box"><span>Тээврийн зөрүү:</span><b id="recvDiff">—</b></div><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
- const f=$('receivingForm');function c(){const t=cache.transports.find(x=>x.id===f.transport_id.value);$('recvDiff').textContent=t?fmt(num(t.total_sent_kg)-num(f.weight.value))+' кг':'—'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const t=cache.transports.find(x=>x.id===f.transport_id.value);if(!t)return;try{await rpc('receive_transport',{p_transport_id:t.id,p_received_date:String(f.date.value),p_note:f.note.value||null,p_user_id:session.user.id,p_received_weight_kg:num(f.weight.value)});await pullData();toast('Хүлээн авалт хадгалагдлаа');renderReceiving()}catch(err){toast('Алдаа: '+err.message)}};c();
+ const f=$('receivingForm');function c(){const t=cache.transports.find(x=>x.id===f.transport_id.value);$('recvDiff').textContent=t?fmt(num(t.total_sent_kg)-num(f.weight.value))+' кг':'—'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const t=cache.transports.find(x=>x.id===f.transport_id.value);if(!t)return;try{await rpc('receive_transport',{p_transport_id:t.id,p_received_date:String(f.date.value),p_note:f.note.value||null,p_user_id:session.user.id,p_received_weight_kg:num(f.weight.value)});await pullData();toast('Хүлээн авалт хадгалагдлаа');renderReceiving()}catch(err){toast('Алдаа: '+errMn(err))}};c();
 }
 
 function renderPackaging(){
@@ -244,13 +244,13 @@ function renderPackaging(){
 }
 async function createProduct(fd){
  const mid=String(fd.get('material_id')),w=num(fd.get('weight'));const m=cache.materials.find(x=>x.id===mid);if(!m||w<=0)return toast('Материал/жин буруу');if(w>num(m.current_available)+.0001)return toast('Үлдэгдлээс их байна');
- try{const productId=uuid();const srcAnimal=cache.animals.find(a=>a.id===m.animal_id);const productCode=`${srcAnimal?.animal_code||m.animal_id.slice(0,8)}-P${productId.slice(0,6).toUpperCase()}`;await rpc('create_product',{p_product_id:productId,p_product_code:productCode,p_material_id:mid,p_weight_kg:w,p_product_type:String(fd.get('product_type')),p_packaging_date:String(fd.get('date')),p_packaging_cost:num(fd.get('cost')),p_note:fd.get('note')||null,p_qty:KHORKHOG[fd.get('product_type')]?num($('khQty').value):1,p_unit:KHORKHOG[fd.get('product_type')]?'ширхэг':'кг',p_unit_weight_kg:KHORKHOG[fd.get('product_type')]||null,p_user_id:session.user.id});await pullData();toast('Бүтээгдэхүүн хадгалагдлаа');renderPackaging()}catch(err){toast('Алдаа: '+err.message)}
+ try{const productId=uuid();const srcAnimal=cache.animals.find(a=>a.id===m.animal_id);const productCode=`${srcAnimal?.animal_code||m.animal_id.slice(0,8)}-P${productId.slice(0,6).toUpperCase()}`;await rpc('create_product',{p_product_id:productId,p_product_code:productCode,p_material_id:mid,p_weight_kg:w,p_product_type:String(fd.get('product_type')),p_packaging_date:String(fd.get('date')),p_packaging_cost:num(fd.get('cost')),p_note:fd.get('note')||null,p_qty:KHORKHOG[fd.get('product_type')]?num($('khQty').value):1,p_unit:KHORKHOG[fd.get('product_type')]?'ширхэг':'кг',p_unit_weight_kg:KHORKHOG[fd.get('product_type')]||null,p_user_id:session.user.id});await pullData();toast('Бүтээгдэхүүн хадгалагдлаа');renderPackaging()}catch(err){toast('Алдаа: '+errMn(err))}
 }
 
 function renderSales(){
  const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));
  $('view').innerHTML=formCard(`<form id="saleForm"><label>Бүтээгдэхүүн</label><select name="product_id" id="saleProduct" required>${ps.map(p=>`<option value="${p.id}">${esc(p.product_code)} · ${esc(p.animal_type||'')} · ${esc(p.product_type)} · ${fmt(p.current_available)} ${esc(p.unit)}</option>`).join('')||'<option value="">Зарах бүтээгдэхүүн алга</option>'}</select><div class="helper" id="saleRemain"></div><label>Тоо хэмжээ</label><input name="qty" id="saleQty" type="number" min="0.1" step="0.1" required><label>Нэгжийн үнэ (₮)</label><input name="price" type="number" min="0" step="1" required><div class="calc-box"><span>Нийт дүн:</span><b id="saleTotal">0 ₮</b></div><label>Огноо</label><input name="date" type="date" value="${today()}" required><label>Хэрэглэгч (заавал биш)</label><input name="customer"><label>Утас (заавал биш)</label><input name="customer_phone"><button class="btn-primary">Хадгалах</button></form>`);
- const f=$('saleForm');function c(){const p=cache.products.find(x=>x.id===f.product_id.value);$('saleRemain').textContent=p?`Үлдэгдэл: ${fmt(p.current_available)} ${p.unit}`:'';$('saleQty').max=p?.current_available||'';$('saleTotal').textContent=fmt(num(f.qty.value)*num(f.price.value),0)+' ₮'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const p=cache.products.find(x=>x.id===f.product_id.value);if(!p)return;const q=num(f.qty.value);if(q>num(p.current_available)+.0001)return toast('Үлдэгдлээс их байна');try{await rpc('create_sale',{p_sale_id:uuid(),p_product_id:p.id,p_qty:q,p_unit_price:num(f.price.value),p_sale_date:String(f.date.value),p_customer:String(f.customer.value||''),p_customer_phone:String(f.customer_phone.value||''),p_user_id:session.user.id});await pullData();toast('Борлуулалт хадгалагдлаа');renderSales()}catch(err){toast('Алдаа: '+err.message)}};c();
+ const f=$('saleForm');function c(){const p=cache.products.find(x=>x.id===f.product_id.value);$('saleRemain').textContent=p?`Үлдэгдэл: ${fmt(p.current_available)} ${p.unit}`:'';$('saleQty').max=p?.current_available||'';$('saleTotal').textContent=fmt(num(f.qty.value)*num(f.price.value),0)+' ₮'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const p=cache.products.find(x=>x.id===f.product_id.value);if(!p)return;const q=num(f.qty.value);if(q>num(p.current_available)+.0001)return toast('Үлдэгдлээс их байна');try{await rpc('create_sale',{p_sale_id:uuid(),p_product_id:p.id,p_qty:q,p_unit_price:num(f.price.value),p_sale_date:String(f.date.value),p_customer:String(f.customer.value||''),p_customer_phone:String(f.customer_phone.value||''),p_user_id:session.user.id});await pullData();toast('Борлуулалт хадгалагдлаа');renderSales()}catch(err){toast('Алдаа: '+errMn(err))}};c();
 }
 
 function renderInventory(){
@@ -294,6 +294,33 @@ function renderHistory(){
  }).join(''):'<div class="empty"><div class="big">🧾</div>Түүх алга</div>')}
 
 async function upsertDirect(table,row){const r=await supa().from(table).upsert(row,{onConflict:'id'}).select().single();if(r.error)throw r.error;await saveLocalRecord(table,r.data,'synced');return r.data}
+function errMn(err){
+ const raw=(err&&err.message)||String(err||'');
+ const m={
+  'ANIMAL_ALREADY_PROCESSED':'Энэ мал аль хэдийн нядлагдсан байна.',
+  'ANIMAL_NOT_FOUND':'Мал олдсонгүй.',
+  'FORBIDDEN':'Танд энэ үйлдлийг хийх эрх алга.',
+  'INVALID_WEIGHT':'Жин буруу байна.',
+  'MATERIAL_NOT_AT_SHOP':'Энэ материал дэлгүүрт хүлээн авагдаагүй байна.',
+  'MATERIAL_NOT_FOUND':'Материал олдсонгүй.',
+  'NO_OUTPUTS':'Гарц оруулаагүй байна.',
+  'PRODUCT_NOT_FOUND':'Бүтээгдэхүүн олдсонгүй.',
+  'SOURCE_ALREADY_SHOP':'Энэ нөөц аль хэдийн дэлгүүрт байна.',
+  'SOURCE_NOT_FOUND':'Эх үүсвэр олдсонгүй.',
+  'TRANSPORT_NOT_FOUND':'Тээвэр олдсонгүй.'
+ };
+ for(const k in m){ if(raw.includes(k)) {
+   if(k==='INSUFFICIENT_MATERIAL'||k==='INSUFFICIENT_PRODUCT') break;
+   return m[k];
+ }}
+ let mm=raw.match(/INSUFFICIENT_MATERIAL:(?:[^:]*:)?([\d.]+)/);
+ if(mm) return `Материалын үлдэгдэл хүрэлцэхгүй байна. Боломжит: ${fmt(mm[1])} кг`;
+ mm=raw.match(/INSUFFICIENT_PRODUCT:([\d.]+)/);
+ if(mm) return `Бүтээгдэхүүний үлдэгдэл хүрэлцэхгүй байна. Боломжит: ${fmt(mm[1])}`;
+ if(/Failed to fetch|NetworkError|network/i.test(raw)) return 'Сүлжээний алдаа. Интернэт холболтоо шалгана уу.';
+ if(/JWT|token|expired/i.test(raw)) return 'Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү.';
+ return raw;
+}
 async function rpc(fn,args){const r=await supa().rpc(fn,args);if(r.error)throw r.error;return r.data}
 async function pullTable(table){const remote=REMOTE_VIEWS[table]||table;const r=await supa().from(remote).select('*');if(r.error)throw r.error;cache[table]=r.data||[];for(const row of cache[table])await saveLocalRecord(table,row,'synced')}
 async function pullData(){if(!isOnline())return;for(const t of TABLES.filter(x=>x!=='audit_logs'))await pullTable(t);try{await pullTable('audit_logs')}catch(_){}settings.lastSync=new Date().toISOString();await saveSettings();await loadLocal()}
@@ -301,7 +328,7 @@ async function syncNow(){if(syncing||!isOnline()||!supa())return;syncing=true;tr
   const events=(await idbGetAll('outbox')).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
   const order={herder_create:1,animal_create:2,processing_create:3,transport_create:4};
   events.sort((a,b)=>(order[a.type]||99)-(order[b.type]||99)||new Date(a.created_at)-new Date(b.created_at));
-  for(const ev of events){try{ev.status='syncing';ev.attempts++;await idbPut('outbox',ev);if(ev.type==='herder_create'){await upsertDirect('herders',ev.payload)}else if(ev.type==='animal_create'){await upsertDirect('animals',ev.payload);}else if(ev.type==='processing_create')await rpc('create_processing_bundle',{p_payload:ev.payload});else if(ev.type==='transport_create')await rpc('create_transport_bundle',{p_payload:ev.payload});else throw new Error('Unknown outbox event '+ev.type);await removeOutbox(ev.event_id)}catch(err){ev.status='failed';ev.error=err.message;await idbPut('outbox',ev)}}
+  for(const ev of events){try{ev.status='syncing';ev.attempts++;await idbPut('outbox',ev);if(ev.type==='herder_create'){await upsertDirect('herders',ev.payload)}else if(ev.type==='animal_create'){await upsertDirect('animals',ev.payload);}else if(ev.type==='processing_create')await rpc('create_processing_bundle',{p_payload:ev.payload});else if(ev.type==='transport_create')await rpc('create_transport_bundle',{p_payload:ev.payload});else throw new Error('Unknown outbox event '+ev.type);await removeOutbox(ev.event_id)}catch(err){ev.status='failed';ev.error=errMn(err);await idbPut('outbox',ev)}}
   const failed=(await idbGetAll('outbox')).filter(x=>x.status==='failed').length;if(failed)toast(`${failed} бичлэг синк хийгдээгүй үлдлээ`);else if(events.length)toast('Синк амжилттай');settings.lastSync=new Date().toISOString();await saveSettings();await pullData();
  }finally{syncing=false}}
 async function refreshAll(){await loadLocal();const active=location.hash.slice(1);if(active)navigate(active);else renderHome()}
@@ -324,5 +351,5 @@ window.showQR=showQR;
 window.navigate=navigate;window.renderHome=renderHome;window.syncNow=syncNow;window.refreshAll=refreshAll;
 async function boot(){idb=await openIDB();await loadLocal();const ok=await ensureAuth();if(!ok)return;shell();await pullData().catch(()=>{});renderHome();if(isOnline())syncNow().then(refreshAll)}
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').then(reg=>{console.log('[sw] registered',reg.scope)}).catch(err=>{console.error('[sw] registration FAILED:',err)}));
-boot().catch(err=>renderError('Апп эхлүүлэхэд алдаа гарлаа',err.message));
+boot().catch(err=>renderError('Апп эхлүүлэхэд алдаа гарлаа',errMn(err)));
 })();
