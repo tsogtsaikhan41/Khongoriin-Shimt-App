@@ -61,11 +61,29 @@ async function ensureAuth(){
   if(!appConfigReady()){renderSetup();return false}
   const c=supa(); const r=await c.auth.getSession(); session=r.data.session||null;
   if(!session){renderLogin();return false}
-  const pr=await c.from('profiles').select('id,role,full_name,soum').eq('id',session.user.id).maybeSingle();
-  if(pr.error){renderError('Профайл уншихад алдаа гарлаа',pr.error.message);return false}
-  profile=pr.data;
-  if(!profile){renderError('Хэрэглэгчийн профайл тохируулаагүй байна','Supabase дээр profiles хүснэгтэд таны хэрэглэгчийн мөрийг үүсгэнэ үү.');return false}
-  return true;
+  // Offline-safe profile load. The Supabase session itself is persisted
+  // locally, so being offline must not log anybody out. We cache the profile
+  // on every successful online load and fall back to that cache when the
+  // network is unavailable -- otherwise the app becomes unusable in exactly
+  // the remote conditions it was built for.
+  const cachedKey='ks_profile_'+session.user.id;
+  try{
+    const pr=await c.from('profiles').select('id,role,full_name,soum').eq('id',session.user.id).maybeSingle();
+    if(pr.error) throw pr.error;
+    if(pr.data){
+      profile=pr.data;
+      try{localStorage.setItem(cachedKey,JSON.stringify(profile))}catch(_){}
+      return true;
+    }
+    renderError('Хэрэглэгчийн профайл тохируулаагүй байна','Supabase дээр profiles хүснэгтэд таны хэрэглэгчийн мөрийг үүсгэнэ үү.');
+    return false;
+  }catch(err){
+    let cached=null;
+    try{cached=JSON.parse(localStorage.getItem(cachedKey)||'null')}catch(_){}
+    if(cached){ profile=cached; return true; }
+    renderError('Профайл уншихад алдаа гарлаа', (err&&err.message)||'Сүлжээгүй байна. Нэг удаа онлайн орж нэвтэрнэ үү.');
+    return false;
+  }
 }
 
 function renderSetup(){
@@ -94,7 +112,16 @@ function shell(){
   } else {
     $('soumSelect').value=settings.soum||''; $('soumSelect').onchange=()=>{settings.soum=$('soumSelect').value;saveSettings();renderHome()};
   }
-  $('logoutBtn').onclick=async()=>{if((await idbGetAll('outbox')).length){if(!confirm('Синк хүлээж буй мэдээлэл байна. Гарахдаа үргэлжлүүлэх үү?'))return}await supa().auth.signOut();location.reload()};
+  $('logoutBtn').onclick=async()=>{
+    const pending=(await idbGetAll('outbox')).length;
+    if(pending){
+      if(!confirm(`Синк хүлээж буй ${pending} бичлэг байна. Гарвал энэ төхөөрөмжөөс алдагдаж болзошгүй.\n\nҮнэхээр гарах уу?`))return;
+    } else if(!navigator.onLine){
+      if(!confirm('Та одоо офлайн байна. Гарвал дахин интернэт холбогдох хүртэл нэвтэрч чадахгүй.\n\nҮнэхээр гарах уу?'))return;
+    } else {
+      if(!confirm('Системээс гарах уу?'))return;
+    }
+    await supa().auth.signOut();location.reload()};
   $('userLabel').textContent=`${profile?.full_name||session?.user?.email||''} · ${profile?.role||''}`;
   updateNet();window.addEventListener('online',()=>{updateNet();syncNow().then(refreshAll)});window.addEventListener('offline',updateNet);
 }
