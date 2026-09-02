@@ -235,14 +235,14 @@ create trigger trg_audit_sales after insert or update or delete on public.sales 
 -- Material balances. A lot can have one logical stream of quantities; transport creates a child lot at destination.
 create or replace view public.materials as
 select
-  ml.id, ml.animal_id, a.animal_code, ml.source_processing_id, ml.parent_lot_id,
+  ml.id, ml.animal_id, a.animal_code, a.animal_type, ml.source_processing_id, ml.parent_lot_id,
   ml.material_type, ml.original_quantity_kg, ml.location_type,
   coalesce(sum(im.quantity_delta_kg),0) as current_available,
   ml.created_at
 from public.material_lots ml
 join public.animals a on a.id=ml.animal_id
 left join public.inventory_movements im on im.lot_id=ml.id
-group by ml.id,a.animal_code,ml.source_processing_id,ml.parent_lot_id,ml.material_type,ml.original_quantity_kg,ml.location_type,ml.created_at;
+group by ml.id,a.animal_code,a.animal_type,ml.source_processing_id,ml.parent_lot_id,ml.material_type,ml.original_quantity_kg,ml.location_type,ml.created_at;
 
 create or replace view public.transport_summary as
 select t.*,coalesce(sum(ti.quantity_sent_kg),0) total_sent_kg
