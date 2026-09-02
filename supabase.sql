@@ -8,8 +8,13 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null default '',
   role text not null default 'admin' check (role in ('admin','superadmin')),
+  soum text,
   created_at timestamptz not null default now()
 );
+-- Assigned working location. When set on a non-superadmin, the purchase form
+-- locks the soum field to this value so an admin cannot record an animal
+-- against the wrong soum. Superadmin (and anyone with soum null) may choose.
+alter table public.profiles add column if not exists soum text;
 
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path=public
@@ -307,7 +312,7 @@ begin
   if exists(select 1 from public.processing_events where animal_id=aid) then raise exception 'ANIMAL_ALREADY_PROCESSED'; end if;
 
   insert into public.processing_events(id,animal_id,processing_date,location,responsible_user,processing_cost,note)
-  values(pid,aid,(pr->>'processing_date')::date,nullif(pr->>'location',''),coalesce((pr->>'processing_cost')::numeric,0),pr->>'note');
+  values(pid,aid,(pr->>'processing_date')::date,nullif(pr->>'location',''),auth.uid(),coalesce((pr->>'processing_cost')::numeric,0),pr->>'note');
 
   source_soum := animal_record.soum;
   for o in select * from jsonb_array_elements(outs) loop

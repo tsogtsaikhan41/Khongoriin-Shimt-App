@@ -61,7 +61,7 @@ async function ensureAuth(){
   if(!appConfigReady()){renderSetup();return false}
   const c=supa(); const r=await c.auth.getSession(); session=r.data.session||null;
   if(!session){renderLogin();return false}
-  const pr=await c.from('profiles').select('id,role,full_name').eq('id',session.user.id).maybeSingle();
+  const pr=await c.from('profiles').select('id,role,full_name,soum').eq('id',session.user.id).maybeSingle();
   if(pr.error){renderError('Профайл уншихад алдаа гарлаа',pr.error.message);return false}
   profile=pr.data;
   if(!profile){renderError('Хэрэглэгчийн профайл тохируулаагүй байна','Supabase дээр profiles хүснэгтэд таны хэрэглэгчийн мөрийг үүсгэнэ үү.');return false}
@@ -124,7 +124,7 @@ function renderPurchase(){
  $('view').innerHTML=formCard(`<form id="purchaseForm">
  <label>Огноо</label><input type="date" name="date" value="${today()}" required>
  <label>Малчны нэр</label><input name="herderName" required placeholder="Жишээ: Батбаяр">
- <label>Сум</label><select name="soum" required>${SOUMS.map(s=>`<option ${settings.soum===s.name?'selected':''}>${s.name}</option>`).join('')}</select>
+ <label>Сум</label>${(profile?.role!=='superadmin'&&profile?.soum)?`<input name="soum" value="${esc(profile.soum)}" readonly>`:`<select name="soum" required><option value="" ${settings.soum?'':'selected'}>-- сум сонгох --</option>${SOUMS.map(s=>`<option ${settings.soum===s.name?'selected':''}>${s.name}</option>`).join('')}</select>`}
  <label>Мал төрөл</label><select name="animalType" required><option value="">-- сонгох --</option><option>Ямаа</option><option>Хонь</option><option>Үхэр</option><option>Адуу</option><option>Тэмээ</option></select>
  <div class="row2"><div><label>Амьд жин (кг)</label><input type="number" name="liveWeight" min="0.1" step="0.1" required></div><div><label>Үнэ / кг (₮)</label><input type="number" name="pricePerKg" min="0" step="1" required></div></div>
  <div class="calc-box"><span>Нийт үнэ:</span><b id="purchaseTotal">0 ₮</b></div>
