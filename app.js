@@ -307,14 +307,21 @@ function renderHistory(){
  const pages=Math.max(1,Math.ceil(logs.length/HIST_PER));
  if(HIST_PAGE>=pages)HIST_PAGE=pages-1;
  const slice=logs.slice(HIST_PAGE*HIST_PER,(HIST_PAGE+1)*HIST_PER);
+ let lastDay='';
  const rows=slice.map((x,i)=>{
    const ent=HIST_ENTITY[x.entity_type]||x.entity_type;
    const act=HIST_ACTION[x.action]||x.action;
    const subj=histSubject(x);
    const idx=HIST_PAGE*HIST_PER+i;
-   return `<div class="list-item" style="cursor:pointer" onclick="histOpen(${idx})">
-     <div class="top-row"><b>${esc(x.user_label||'—')} · ${esc(act)}</b><span class="date">${new Date(x.created_at).toLocaleString('mn-MN')}</span></div>
-     <div class="details">${esc(ent)}${subj?' · '+esc(subj):''}</div>
+   const d=new Date(x.created_at);
+   const day=d.toLocaleDateString('mn-MN');
+   let head='';
+   if(day!==lastDay){ lastDay=day; head=`<div class="helper" style="margin:14px 0 6px;font-weight:700;color:var(--primary-dark)">${esc(day)}</div>`; }
+   const time=d.toLocaleTimeString('mn-MN',{hour:'2-digit',minute:'2-digit'});
+   const who=x.user_label||'—';
+   return head+`<div class="list-item" style="cursor:pointer" onclick="histOpen(${idx})">
+     <div class="top-row"><b>${esc(who)}</b><span class="date">${esc(time)}</span></div>
+     <div class="details"><b>${esc(act)}</b> · ${esc(ent)}${subj?' · '+esc(subj):''}</div>
      ${histBrief(x)?`<div class="helper">${histBrief(x)}</div>`:''}
    </div>`;
  }).join('');
