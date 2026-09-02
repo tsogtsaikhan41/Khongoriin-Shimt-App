@@ -143,7 +143,6 @@ function renderHome(){
 }
 function navigate(screen){
   if(screen==='home')return renderHome();
-  if(screen==='history'&&profile?.role!=='superadmin'){toast('Энэ хэсэг зөвхөн Superadmin-д нээлттэй');return}
   if(['receiving','packaging','sales','dashboard','inventory','history'].includes(screen)&&!isOnline()){toast('Энэ хэсэг интернэттэй үед ажиллана');return}
   const names={purchase:'Худалдан авалт',processing:'Нядалга',transport:'Тээвэрлэлт',receiving:'Хүлээн авалт',packaging:'Баглаа боодол',sales:'Борлуулалт',inventory:'Агуулах',dashboard:'Хянах самбар',history:'Үйл ажиллагааны түүх'};
   $('main').innerHTML=`<div class="split"><div><h2 class="section-title">${names[screen]}</h2></div><button class="btn-secondary" onclick="renderHome()">← Нүүр</button></div><div id="view"></div>`;
