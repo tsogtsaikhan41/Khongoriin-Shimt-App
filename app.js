@@ -196,9 +196,15 @@ async function createTransport(fd){
  renderTransport();
 }
 
+function transportLabel(t){
+ const items=cache.transport_items.filter(i=>i.transport_id===t.id);
+ const codes=[...new Set(items.map(i=>{const a=cache.animals.find(x=>x.id===i.animal_id);return a?.animal_code||''}).filter(Boolean))];
+ const who=codes.length?(codes.length>2?codes.slice(0,2).join(', ')+' +'+(codes.length-2):codes.join(', ')):'—';
+ return `${t.transport_date} · ${who} · ${fmt(t.total_sent_kg||0)} кг`;
+}
 function renderReceiving(){
  const ts=cache.transports.filter(t=>t.destination_location==='SHOP'&&!t.is_received).sort((a,b)=>b.transport_date?.localeCompare(a.transport_date||'')||0);
- $('view').innerHTML=formCard(`<form id="receivingForm"><label>Тээвэр</label><select name="transport_id" required>${ts.map(t=>`<option value="${t.id}">${esc(t.id.slice(0,8))} · ${esc(t.transport_date)} · ${fmt(t.total_sent_kg||0)} кг</option>`).join('')||'<option>Тээвэр алга</option>'}</select><label>Хүлээн авсан огноо</label><input type="date" name="date" value="${today()}" required><label>Хүлээн авсан жин (кг)</label><input type="number" name="weight" min="0" step="0.1" required><div class="calc-box"><span>Тээврийн зөрүү:</span><b id="recvDiff">—</b></div><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
+ $('view').innerHTML=formCard(`<form id="receivingForm"><label>Тээвэр</label><select name="transport_id" required>${ts.map(t=>`<option value="${t.id}">${esc(transportLabel(t))}</option>`).join('')||'<option>Тээвэр алга</option>'}</select><label>Хүлээн авсан огноо</label><input type="date" name="date" value="${today()}" required><label>Хүлээн авсан жин (кг)</label><input type="number" name="weight" min="0" step="0.1" required><div class="calc-box"><span>Тээврийн зөрүү:</span><b id="recvDiff">—</b></div><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
  const f=$('receivingForm');function c(){const t=cache.transports.find(x=>x.id===f.transport_id.value);$('recvDiff').textContent=t?fmt(num(t.total_sent_kg)-num(f.weight.value))+' кг':'—'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const t=cache.transports.find(x=>x.id===f.transport_id.value);if(!t)return;try{await rpc('receive_transport',{p_transport_id:t.id,p_received_date:String(f.date.value),p_note:f.note.value||null,p_user_id:session.user.id,p_received_weight_kg:num(f.weight.value)});await pullData();toast('Хүлээн авалт хадгалагдлаа');renderReceiving()}catch(err){toast('Алдаа: '+err.message)}};c();
 }
 
