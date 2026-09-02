@@ -5,7 +5,7 @@
 const CONFIG = window.APP_CONFIG || {};
 const SB = window.supabase;
 const TABLES = ['herders','animals','processing_events','materials','transports','transport_items','receivings','products','sales','audit_logs'];
-const REMOTE_VIEWS = {transports:'transport_summary', products:'product_balances'};
+const REMOTE_VIEWS = {transports:'transport_summary', products:'product_balances', audit_logs:'audit_feed'};
 const OFFLINE_MUTATIONS = new Set(['herder_create','animal_create','processing_create','transport_create']);
 const SOUMS = [
   {name:'Богд',code:'BOG'}, {name:'Жинст',code:'JIN'}, {name:'Бөмбөгөр',code:'BUM'}, {name:'Баянцагаан',code:'BTS'}
@@ -254,44 +254,217 @@ function renderSales(){
 }
 
 function renderInventory(){
- const mats=cache.materials.filter(m=>num(m.current_available)>0);const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));$('view').innerHTML=`<div class="card"><h3 style="margin-top:0">Материал</h3>${mats.length?`<table><tr><th>Амьтан</th><th>Мал</th><th>Төрөл</th><th>Байршил</th><th>Үлдэгдэл</th></tr>${mats.map(m=>`<tr><td>${esc(m.animal_code||'—')}</td><td>${esc(m.animal_type||'')}</td><td>${esc(m.material_type==='MEAT'?'Мах':'Дайвар')}</td><td>${esc(m.location_type||'')}</td><td><b>${fmt(m.current_available)} кг</b></td></tr>`).join('')}</table>`:'<div class="empty">Материалын үлдэгдэл алга</div>'}</div><div class="card"><h3 style="margin-top:0">Бүтээгдэхүүн</h3>${ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?fmt(p.current_available)+' '+esc(p.unit):'<span class="badge bad">Дууссан</span>'}</b></td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button></td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>'}</div>`;
+ const mats=cache.materials.filter(m=>num(m.current_available)>0);const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));$('view').innerHTML=`<div class="card"><h3 style="margin-top:0">Материал</h3>${mats.length?`<table><tr><th>Амьтан</th><th>Мал</th><th>Төрөл</th><th>Байршил</th><th>Үлдэгдэл</th></tr>${mats.map(m=>`<tr><td>${esc(m.animal_code||'—')}</td><td>${esc(m.animal_type||'')}</td><td>${esc(m.material_type==='MEAT'?'Мах':'Дайвар')}</td><td>${esc(m.location_type||'')}</td><td><b>${fmt(m.current_available)} кг</b></td></tr>`).join('')}</table>`:'<div class="empty">Материалын үлдэгдэл алга</div>'}</div><div class="card"><h3 style="margin-top:0">Бүтээгдэхүүн</h3>${ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?fmt(p.current_available)+' '+esc(p.unit):'<span class="badge bad">Дууссан</span>'}</b></td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="deleteRecord('products','${p.id}','${esc(p.product_code)}')">Устгах</button>`:''}</td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>'}</div>`;
 }
 function renderDashboard(){
  const purchased=cache.animals.filter(a=>a.purchase_date).length;const meat=cache.materials.filter(m=>m.material_type==='MEAT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);const byp=cache.materials.filter(m=>m.material_type==='BYPRODUCT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);const revenue=cache.sales.reduce((s,x)=>s+num(x.total_amount),0);const costs=cache.animals.reduce((s,x)=>s+num(x.total_cost),0)+cache.processing_events.reduce((s,x)=>s+num(x.processing_cost),0)+cache.transports.reduce((s,x)=>s+num(x.cost),0)+cache.products.reduce((s,x)=>s+num(x.packaging_cost),0);$('view').innerHTML=`<div class="stat-grid"><div class="stat"><div class="n">${fmt(purchased,0)}</div><div class="l">Худалдан авсан амьтан</div></div><div class="stat"><div class="n">${fmt(meat)}</div><div class="l">Махны гарц, кг</div></div><div class="stat"><div class="n">${fmt(byp)}</div><div class="l">Дайвар, кг</div></div><div class="stat"><div class="n">${fmt(revenue,0)}₮</div><div class="l">Борлуулалт</div></div><div class="stat"><div class="n">${fmt(costs,0)}₮</div><div class="l">Бүртгэгдсэн зардал</div></div><div class="stat"><div class="n">${fmt(revenue-costs,0)}₮</div><div class="l">Энгийн зөрүү</div></div></div><div class="card"><b>Мэдээллийн төлөв</b><div class="helper">Тооцоолол нь одоогийн бүртгэл дээр тулгуурлана. Санхүүгийн бүрэн нягтлан бодох бүртгэл биш.</div></div>`;
 }
-const HIST_ENTITY={sales:'Борлуулалт',animals:'Худалдан авалт',herders:'Малчин',processing_events:'Нядалга',transports:'Тээвэрлэлт',receivings:'Хүлээн авалт',products:'Бүтээгдэхүүн',material_lots:'Материал',profiles:'Хэрэглэгч'};
-const HIST_ACTION={CREATE:'Үүсгэсэн',UPDATE:'Засварласан',DELETE:'Устгасан'};
-const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',herd_size:'Мал толгой',certified:'Баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл'};
-const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsible_user','animal_id','product_id','herder_id','source_material_id','source_processing_id','transport_id','transport_item_id','lot_id','related_entity_id','related_entity_type','location_type','destination_location','_sync_state']);
+const HIST_ENTITY={sales:'Борлуулалт',animals:'Худалдан авалт',herders:'Малчин',processing_events:'Нядалга',transports:'Тээвэрлэлт',transport_items:'Тээвэрлэлт',receivings:'Хүлээн авалт',products:'Баглаа боодол',material_lots:'Материал',profiles:'Хэрэглэгч'};
+const HIST_ACTION={CREATE:'Бүртгэсэн',UPDATE:'Засварласан',DELETE:'Устгасан'};
+const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',quantity_sent_kg:'Илгээсэн жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',herd_size:'Мал толгой',certified:'Баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл',original_quantity_kg:'Анхны жин (кг)',unit:'Нэгж',estimated_age_years:'Нас (жил)',role:'Эрх'};
+const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsible_user','animal_id','product_id','herder_id','source_material_id','source_processing_id','transport_id','transport_item_id','lot_id','parent_lot_id','related_entity_id','related_entity_type','location_type','destination_location','_sync_state','user_id']);
+// Fields that establish identity or lineage. Correcting a typo is fine;
+// silently repointing a product at a different animal is not -- that would
+// break the traceability the whole system exists to guarantee.
+const HIST_LOCKED=new Set(['animal_code','product_code','soum','status','total_amount','total_cost']);
+const HIST_EDITABLE={
+ animals:['live_weight_kg','price_per_kg','animal_type','estimated_age_years','purchase_date','note'],
+ herders:['full_name','herd_size','certified','note'],
+ processing_events:['processing_date','processing_cost','location','note'],
+ transports:['transport_date','cost','note'],
+ receivings:['received_date','received_weight_kg','note'],
+ products:['product_type','packaging_date','note'],
+ sales:['qty','unit_price','sale_date','customer','customer_phone']
+};
+let HIST_PAGE=0; const HIST_PER=15;
+
 function histVal(k,v){
-  if(v===null||v===undefined||v==='')return '—';
-  if(typeof v==='boolean')return v?'Тийм':'Үгүй';
-  if(k==='material_type')return v==='MEAT'?'Мах':'Дайвар';
-  if(typeof v==='number')return fmt(v);
-  return String(v);
+ if(v===null||v===undefined||v==='')return '—';
+ if(typeof v==='boolean')return v?'Тийм':'Үгүй';
+ if(k==='material_type')return v==='MEAT'?'Мах':'Дайвар';
+ if(typeof v==='number')return fmt(v);
+ return String(v);
 }
-function histSummary(x){
-  const nw=x.new_data||{},od=x.old_data||{};
-  if(x.action==='CREATE'){
-    const parts=Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]).map(k=>`${HIST_FIELD[k]}: <b>${esc(histVal(k,nw[k]))}</b>`);
-    return parts.length?parts.join(' · '):'';
-  }
-  if(x.action==='UPDATE'){
-    const parts=Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]&&JSON.stringify(od[k])!==JSON.stringify(nw[k]))
-      .map(k=>`${HIST_FIELD[k]}: <s>${esc(histVal(k,od[k]))}</s> → <b>${esc(histVal(k,nw[k]))}</b>`);
-    return parts.length?parts.join(' · '):'Өөрчлөлт алга';
-  }
-  return '';
+function histSubject(x){
+ const d=x.new_data||x.old_data||{};
+ return d.animal_code||d.product_code||d.full_name||d.animal_type||d.product_type||'';
+}
+function histChanges(x){
+ const nw=x.new_data||{},od=x.old_data||{};
+ if(x.action==='UPDATE'){
+   return Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]&&JSON.stringify(od[k])!==JSON.stringify(nw[k]))
+     .map(k=>({k,label:HIST_FIELD[k],from:histVal(k,od[k]),to:histVal(k,nw[k])}));
+ }
+ return Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k])
+   .map(k=>({k,label:HIST_FIELD[k],to:histVal(k,nw[k])}));
+}
+function histBrief(x){
+ const ch=histChanges(x).slice(0,3);
+ if(!ch.length)return '';
+ return ch.map(c=>c.from!==undefined?`${c.label}: ${esc(c.from)}→${esc(c.to)}`:`${c.label}: ${esc(c.to)}`).join(' · ');
 }
 function renderHistory(){
  const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
- $('view').innerHTML=formCard(logs.length?logs.slice(0,150).map(x=>{
+ const pages=Math.max(1,Math.ceil(logs.length/HIST_PER));
+ if(HIST_PAGE>=pages)HIST_PAGE=pages-1;
+ const slice=logs.slice(HIST_PAGE*HIST_PER,(HIST_PAGE+1)*HIST_PER);
+ const rows=slice.map((x,i)=>{
    const ent=HIST_ENTITY[x.entity_type]||x.entity_type;
    const act=HIST_ACTION[x.action]||x.action;
-   const who=x.user_label||'';
-   const sum=histSummary(x);
-   return `<div class="list-item"><div class="top-row"><b>${esc(ent)} — ${esc(act)}</b><span class="date">${new Date(x.created_at).toLocaleString('mn-MN')}</span></div>${sum?`<div class="details">${sum}</div>`:''}${who?`<div class="helper">${esc(who)}</div>`:''}</div>`;
- }).join(''):'<div class="empty"><div class="big">🧾</div>Түүх алга</div>')}
+   const subj=histSubject(x);
+   const idx=HIST_PAGE*HIST_PER+i;
+   return `<div class="list-item" style="cursor:pointer" onclick="histOpen(${idx})">
+     <div class="top-row"><b>${esc(x.user_label||'—')} · ${esc(act)}</b><span class="date">${new Date(x.created_at).toLocaleString('mn-MN')}</span></div>
+     <div class="details">${esc(ent)}${subj?' · '+esc(subj):''}</div>
+     ${histBrief(x)?`<div class="helper">${histBrief(x)}</div>`:''}
+   </div>`;
+ }).join('');
+ const tools=`<div class="split" style="margin-bottom:12px"><span class="helper">Түүхийг Excel-д татах</span><button class="btn-secondary" onclick="exportHistoryCSV()">⬇ Excel (CSV)</button></div>`;
+ const nav=`<div class="split" style="margin-top:10px">
+   <button class="btn-ghost" ${HIST_PAGE===0?'disabled':''} onclick="histPage(-1)">← Өмнөх</button>
+   <span class="helper">${HIST_PAGE+1} / ${pages} · нийт ${logs.length}</span>
+   <button class="btn-ghost" ${HIST_PAGE>=pages-1?'disabled':''} onclick="histPage(1)">Дараах →</button>
+ </div>`;
+ $('view').innerHTML=formCard(logs.length?tools+rows+nav:'<div class="empty"><div class="big">🧾</div>Түүх алга</div>');
+}
+function histPage(d){HIST_PAGE=Math.max(0,HIST_PAGE+d);renderHistory();window.scrollTo(0,0)}
+function histOpen(idx){
+ const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+ const x=logs[idx]; if(!x)return;
+ const ent=HIST_ENTITY[x.entity_type]||x.entity_type;
+ const act=HIST_ACTION[x.action]||x.action;
+ const ch=histChanges(x);
+ const canEdit=profile?.role==='superadmin'&&HIST_EDITABLE[x.entity_type];
+ const body=ch.length?`<table><tr><th>Талбар</th>${x.action==='UPDATE'?'<th>Өмнө</th>':''}<th>${x.action==='UPDATE'?'Дараа':'Утга'}</th></tr>
+   ${ch.map(c=>`<tr><td>${esc(c.label)}</td>${x.action==='UPDATE'?`<td class="muted">${esc(c.from)}</td>`:''}<td><b>${esc(c.to)}</b></td></tr>`).join('')}</table>`
+   :'<div class="helper">Дэлгэрэнгүй мэдээлэл алга</div>';
+ $('modal-root').innerHTML=`<div class="modal-back"><div class="modal">
+   <div class="modal-head"><b>${esc(ent)} — ${esc(act)}</b><button class="x" onclick="histClose()">×</button></div>
+   <div class="helper" style="margin:6px 0 12px">${esc(x.user_label||'—')} · ${new Date(x.created_at).toLocaleString('mn-MN')}${histSubject(x)?' · '+esc(histSubject(x)):''}</div>
+   ${body}
+   ${x.reason?`<div class="helper" style="margin-top:10px">Шалтгаан: ${esc(x.reason)}</div>`:''}
+   ${canEdit?`<button class="btn-primary" onclick="histEdit('${x.entity_type}','${x.entity_id}')">Засварлах</button>`:''}
+ </div></div>`;
+}
+function histClose(){$('modal-root').innerHTML=''}
+function histEdit(table,id){
+ const fields=HIST_EDITABLE[table]||[];
+ const row=(cache[table]||[]).find(r=>r.id===id);
+ if(!row)return toast('Бичлэг олдсонгүй. Эхлээд синк хийнэ үү.');
+ $('modal-root').innerHTML=`<div class="modal-back"><div class="modal">
+   <div class="modal-head"><b>Засварлах — ${esc(HIST_ENTITY[table]||table)}</b><button class="x" onclick="histClose()">×</button></div>
+   <form id="histEditForm">
+   ${fields.map(f=>{
+     const v=row[f]??'';
+     const t=(typeof row[f]==='number')?'number':(String(f).includes('date')?'date':'text');
+     if(typeof row[f]==='boolean')return `<label>${esc(HIST_FIELD[f]||f)}</label><select name="${f}"><option value="true" ${row[f]?'selected':''}>Тийм</option><option value="false" ${!row[f]?'selected':''}>Үгүй</option></select>`;
+     return `<label>${esc(HIST_FIELD[f]||f)}</label><input name="${f}" type="${t}" ${t==='number'?'step="0.01"':''} value="${esc(v)}">`;
+   }).join('')}
+   <label>Засварын шалтгаан (заавал)</label><textarea name="__reason" rows="2" required></textarea>
+   <button class="btn-primary">Хадгалах</button></form>
+ </div></div>`;
+ $('histEditForm').onsubmit=async e=>{
+   e.preventDefault();
+   const fd=new FormData(e.target);
+   const reason=String(fd.get('__reason')||'').trim();
+   if(!reason)return toast('Шалтгаан бөглөнө үү');
+   const patch={};
+   for(const f of fields){
+     let v=fd.get(f);
+     if(v===null)continue;
+     if(typeof row[f]==='boolean')v=(v==='true');
+     else if(typeof row[f]==='number')v=num(v);
+     else v=(v===''?null:v);
+     if(JSON.stringify(v)!==JSON.stringify(row[f]??null))patch[f]=v;
+   }
+   if(!Object.keys(patch).length)return toast('Өөрчлөлт алга');
+   try{
+     const r=await supa().from(table).update(patch).eq('id',id).select().single();
+     if(r.error)throw r.error;
+     await supa().from('audit_logs').insert({entity_type:table,entity_id:id,action:'UPDATE',user_id:session.user.id,old_data:row,new_data:r.data,reason});
+     toast('Засварлагдлаа');
+     histClose();
+     await pullData(); renderHistory();
+   }catch(err){ toast('Алдаа: '+errMn(err)) }
+ };
+}
+
+// ---- CSV export (opens directly in Excel; no external library needed) ----
+function csvCell(v){
+ if(v===null||v===undefined)return '';
+ const t=String(v);
+ return /[",\n;]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
+}
+function downloadCSV(filename,rows){
+ if(!rows.length)return toast('Татах мэдээлэл алга');
+ const cols=Object.keys(rows[0]);
+ const body=[cols.join(';')].concat(rows.map(r=>cols.map(c=>csvCell(r[c])).join(';'))).join('\r\n');
+ // BOM so Excel reads Cyrillic correctly
+ const blob=new Blob(['\ufeff'+body],{type:'text/csv;charset=utf-8;'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob); a.download=filename;
+ document.body.appendChild(a); a.click(); document.body.removeChild(a);
+ URL.revokeObjectURL(a.href);
+ toast('Татагдлаа');
+}
+function exportHistoryCSV(){
+ const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+ downloadCSV(`tuuh-${today()}.csv`, logs.map(x=>({
+   'Огноо':new Date(x.created_at).toLocaleString('mn-MN'),
+   'Хэрэглэгч':x.user_label||'',
+   'Үйлдэл':HIST_ACTION[x.action]||x.action,
+   'Хэсэг':HIST_ENTITY[x.entity_type]||x.entity_type,
+   'Обьект':histSubject(x),
+   'Өөрчлөлт':histChanges(x).map(c=>c.from!==undefined?`${c.label}: ${c.from} -> ${c.to}`:`${c.label}: ${c.to}`).join(' | '),
+   'Шалтгаан':x.reason||''
+ })));
+}
+window.exportHistoryCSV=exportHistoryCSV;
+
+// ---- Guarded delete (superadmin only) ----
+// A record may only be removed while nothing downstream depends on it.
+// Deleting a product that has already been sold -- or whose QR label is
+// physically on a package -- would leave a scanned code pointing at nothing.
+function deleteBlockers(table,id){
+ const b=[];
+ if(table==='products'){
+   if(cache.sales.some(x=>x.product_id===id))b.push('борлуулалт бүртгэгдсэн');
+ }
+ if(table==='animals'){
+   if(cache.processing_events.some(x=>x.animal_id===id))b.push('нядалга хийгдсэн');
+   if(cache.products.some(x=>x.animal_id===id))b.push('бүтээгдэхүүн үүссэн');
+ }
+ if(table==='herders'){
+   if(cache.animals.some(x=>x.herder_id===id))b.push('мал бүртгэгдсэн');
+ }
+ if(table==='material_lots'||table==='materials'){
+   if(cache.products.some(x=>x.source_material_id===id))b.push('бүтээгдэхүүн үүссэн');
+   if(cache.transport_items.some(x=>x.source_material_id===id))b.push('тээвэрлэгдсэн');
+ }
+ return b;
+}
+async function deleteRecord(table,id,label){
+ if(profile?.role!=='superadmin')return toast('Зөвхөн супер админ устгах эрхтэй');
+ const blockers=deleteBlockers(table,id);
+ if(blockers.length){
+   return alert(`Устгах боломжгүй.\n\nЭнэ бичлэг дээр аль хэдийн: ${blockers.join(', ')}.\n\nМөшгөлтийн бүрэн бүтэн байдлыг хамгаалахын тулд устгахыг зөвшөөрөхгүй. Оронд нь Түүх хэсгээс засварлана уу.`);
+ }
+ const reason=prompt(`"${label}" -г устгах шалтгаан:`);
+ if(reason===null)return;
+ if(!reason.trim())return toast('Шалтгаан бөглөнө үү');
+ if(!confirm('Энэ үйлдлийг буцаах боломжгүй. Устгах уу?'))return;
+ try{
+   const row=(cache[table]||[]).find(r=>r.id===id)||null;
+   const r=await supa().from(table).delete().eq('id',id);
+   if(r.error)throw r.error;
+   await supa().from('audit_logs').insert({entity_type:table,entity_id:id,action:'DELETE',user_id:session.user.id,old_data:row,new_data:null,reason:reason.trim()});
+   toast('Устгагдлаа');
+   await pullData(); renderHome();
+ }catch(err){ alert('Устгах алдаа: '+errMn(err)) }
+}
+window.deleteRecord=deleteRecord;
+
+window.histOpen=histOpen;window.histClose=histClose;window.histPage=histPage;window.histEdit=histEdit;
 
 async function upsertDirect(table,row){const r=await supa().from(table).upsert(row,{onConflict:'id'}).select().single();if(r.error)throw r.error;await saveLocalRecord(table,r.data,'synced');return r.data}
 function errMn(err){
