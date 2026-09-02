@@ -251,11 +251,11 @@ group by t.id;
 
 create or replace view public.product_balances as
 select
- p.*, a.animal_code,
+ p.*, a.animal_code, a.animal_type,
  coalesce(sum(pm.quantity_delta_kg),0) as current_available
 from public.products p join public.animals a on a.id=p.animal_id
 left join public.product_movements pm on pm.product_id=p.id
-group by p.id,a.animal_code;
+group by p.id,a.animal_code,a.animal_type;
 
 -- Public QR-safe view. No costs, customers, staff, IDs or internal notes.
 --
