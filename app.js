@@ -8,7 +8,7 @@ const TABLES = ['herders','animals','processing_events','materials','transports'
 const REMOTE_VIEWS = {transports:'transport_summary', products:'product_balances'};
 const OFFLINE_MUTATIONS = new Set(['herder_create','animal_create','processing_create','transport_create']);
 const SOUMS = [
-  {name:'Богд',code:'BOG'}, {name:'Жинст',code:'JIN'}, {name:'Бөмбөгөр',code:'BUM'}, {name:'Баян-Цагаан',code:'BTS'}
+  {name:'Богд',code:'BOG'}, {name:'Жинст',code:'JIN'}, {name:'Бөмбөгөр',code:'BUM'}, {name:'Баянцагаан',code:'BTS'}
 ];
 const KHORKHOG = {'Хорхог 1.5кг':1.5,'Хорхог 2.3кг':2.3,'Хорхог 3.3кг':3.3};
 const IDB_NAME='khongor_shimt_v6'; const IDB_VERSION=1;
@@ -82,7 +82,18 @@ function shell(){
   <header class="topbar"><div class="brand"><span class="logo">🐑</span><div class="titles"><b>Мах Хяналт</b><span id="userLabel"></span></div></div><div class="top-actions"><span id="netDot" class="status-dot"></span><select class="top-select" id="soumSelect"><option value="">Сум сонгох</option></select><button class="backbtn" id="logoutBtn">Гарах</button></div></header>
   <main id="main"></main>`;
   SOUMS.forEach(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=s.name;$('soumSelect').appendChild(o)});const sh=document.createElement('option');sh.value='Дэлгүүр';sh.textContent='Дэлгүүр (төв)';$('soumSelect').appendChild(sh);
-  $('soumSelect').value=settings.soum||''; $('soumSelect').onchange=()=>{settings.soum=$('soumSelect').value;saveSettings();renderHome()};
+  // An admin with an assigned soum works only from that location, so the
+  // picker is replaced by a plain read-only label. Superadmin (and anyone
+  // without an assigned soum) keeps the selector.
+  if(profile?.role!=='superadmin' && profile?.soum){
+    settings.soum=profile.soum; saveSettings();
+    const sel=$('soumSelect'); const tag=document.createElement('span');
+    tag.className='top-select'; tag.style.cssText='display:inline-block;padding:8px 10px;';
+    tag.textContent=profile.soum;
+    sel.replaceWith(tag);
+  } else {
+    $('soumSelect').value=settings.soum||''; $('soumSelect').onchange=()=>{settings.soum=$('soumSelect').value;saveSettings();renderHome()};
+  }
   $('logoutBtn').onclick=async()=>{if((await idbGetAll('outbox')).length){if(!confirm('Синк хүлээж буй мэдээлэл байна. Гарахдаа үргэлжлүүлэх үү?'))return}await supa().auth.signOut();location.reload()};
   $('userLabel').textContent=`${profile?.full_name||session?.user?.email||''} · ${profile?.role||''}`;
   updateNet();window.addEventListener('online',()=>{updateNet();syncNow().then(refreshAll)});window.addEventListener('offline',updateNet);
