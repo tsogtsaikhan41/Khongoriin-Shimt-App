@@ -214,7 +214,39 @@ function renderInventory(){
 function renderDashboard(){
  const purchased=cache.animals.filter(a=>a.purchase_date).length;const meat=cache.materials.filter(m=>m.material_type==='MEAT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);const byp=cache.materials.filter(m=>m.material_type==='BYPRODUCT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);const revenue=cache.sales.reduce((s,x)=>s+num(x.total_amount),0);const costs=cache.animals.reduce((s,x)=>s+num(x.total_cost),0)+cache.processing_events.reduce((s,x)=>s+num(x.processing_cost),0)+cache.transports.reduce((s,x)=>s+num(x.cost),0)+cache.products.reduce((s,x)=>s+num(x.packaging_cost),0);$('view').innerHTML=`<div class="stat-grid"><div class="stat"><div class="n">${fmt(purchased,0)}</div><div class="l">Худалдан авсан амьтан</div></div><div class="stat"><div class="n">${fmt(meat)}</div><div class="l">Махны гарц, кг</div></div><div class="stat"><div class="n">${fmt(byp)}</div><div class="l">Дайвар, кг</div></div><div class="stat"><div class="n">${fmt(revenue,0)}₮</div><div class="l">Борлуулалт</div></div><div class="stat"><div class="n">${fmt(costs,0)}₮</div><div class="l">Бүртгэгдсэн зардал</div></div><div class="stat"><div class="n">${fmt(revenue-costs,0)}₮</div><div class="l">Энгийн зөрүү</div></div></div><div class="card"><b>Мэдээллийн төлөв</b><div class="helper">Тооцоолол нь одоогийн бүртгэл дээр тулгуурлана. Санхүүгийн бүрэн нягтлан бодох бүртгэл биш.</div></div>`;
 }
-function renderHistory(){const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));$('view').innerHTML=formCard(logs.length?logs.slice(0,150).map(x=>`<div class="list-item"><div class="top-row"><b>${esc(x.action)}</b><span class="date">${new Date(x.created_at).toLocaleString('mn-MN')}</span></div><div class="details">${esc(x.entity_type)} · ${esc(x.entity_id?.slice(0,8)||'')} · ${esc(x.user_label||x.user_id?.slice(0,8)||'')}</div>${x.old_data||x.new_data?`<div class="helper">${esc(JSON.stringify(x.old_data||{}))} → ${esc(JSON.stringify(x.new_data||{}))}</div>`:''}</div>`).join(''):'<div class="empty"><div class="big">🧾</div>Түүх алга</div>')}
+const HIST_ENTITY={sales:'Борлуулалт',animals:'Худалдан авалт',herders:'Малчин',processing_events:'Нядалга',transports:'Тээвэрлэлт',receivings:'Хүлээн авалт',products:'Бүтээгдэхүүн',material_lots:'Материал',profiles:'Хэрэглэгч'};
+const HIST_ACTION={CREATE:'Үүсгэсэн',UPDATE:'Засварласан',DELETE:'Устгасан'};
+const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',herd_size:'Мал толгой',certified:'Баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл'};
+const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsible_user','animal_id','product_id','herder_id','source_material_id','source_processing_id','transport_id','transport_item_id','lot_id','related_entity_id','related_entity_type','location_type','destination_location','_sync_state']);
+function histVal(k,v){
+  if(v===null||v===undefined||v==='')return '—';
+  if(typeof v==='boolean')return v?'Тийм':'Үгүй';
+  if(k==='material_type')return v==='MEAT'?'Мах':'Дайвар';
+  if(typeof v==='number')return fmt(v);
+  return String(v);
+}
+function histSummary(x){
+  const nw=x.new_data||{},od=x.old_data||{};
+  if(x.action==='CREATE'){
+    const parts=Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]).map(k=>`${HIST_FIELD[k]}: <b>${esc(histVal(k,nw[k]))}</b>`);
+    return parts.length?parts.join(' · '):'';
+  }
+  if(x.action==='UPDATE'){
+    const parts=Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]&&JSON.stringify(od[k])!==JSON.stringify(nw[k]))
+      .map(k=>`${HIST_FIELD[k]}: <s>${esc(histVal(k,od[k]))}</s> → <b>${esc(histVal(k,nw[k]))}</b>`);
+    return parts.length?parts.join(' · '):'Өөрчлөлт алга';
+  }
+  return '';
+}
+function renderHistory(){
+ const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+ $('view').innerHTML=formCard(logs.length?logs.slice(0,150).map(x=>{
+   const ent=HIST_ENTITY[x.entity_type]||x.entity_type;
+   const act=HIST_ACTION[x.action]||x.action;
+   const who=x.user_label||'';
+   const sum=histSummary(x);
+   return `<div class="list-item"><div class="top-row"><b>${esc(ent)} — ${esc(act)}</b><span class="date">${new Date(x.created_at).toLocaleString('mn-MN')}</span></div>${sum?`<div class="details">${sum}</div>`:''}${who?`<div class="helper">${esc(who)}</div>`:''}</div>`;
+ }).join(''):'<div class="empty"><div class="big">🧾</div>Түүх алга</div>')}
 
 async function upsertDirect(table,row){const r=await supa().from(table).upsert(row,{onConflict:'id'}).select().single();if(r.error)throw r.error;await saveLocalRecord(table,r.data,'synced');return r.data}
 async function rpc(fn,args){const r=await supa().rpc(fn,args);if(r.error)throw r.error;return r.data}
