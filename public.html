@@ -11,10 +11,10 @@ function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;',
 const heroHtml=`<div style="text-align:center;padding:18px 0 4px"><img src="./logo-hero.png" alt="Хонгорын Шимт" style="width:200px;height:auto;display:block;margin:0 auto"></div>`;
 const storyHtml=`<div class="card">
   <h2 class="section-title" style="margin-bottom:2px">Эрхэм хэрэглэгч танд баярлалаа!</h2>
-  <p class="helper" style="font-size:14px;color:var(--ink)">«Хонгорын Шимт» брэнд нь Баянхонгор аймгийн Баян-Цагаан, Богд, Бөмбөгөр, Жинст сумын 620 гаруй малчин өрхийг нэгтгэсэн 4 анхан шатны хоршооны хамтын брэнд юм.</p>
-  <p class="helper" style="font-size:14px;color:var(--ink)">Франц улсын Элчин сайдын яам болон AVSF-ийн тусламжтайгаар бид малын эрүүл мэнд, бэлчээрийн даацыг онцгойлон анхаарч, уламжлалт маллагааг орчин үеийн стандарттай хослууллаа. Баянхонгорын үзэсгэлэнт байгаль, цэвэр бэлчээрийн шимийг агуулсан энэхүү эрүүл махийг та бүхэндээ бахархалтайгаар өргөн барьж байна.</p>
+  <p class="helper" style="font-size:14px;color:var(--ink)">«Хонгорын Шимт» брэнд нь Баянхонгор аймгийн Баян-Цагаан, Богд, Бөмбөгөр, Жинст сумын 4 анхан шатны хоршооны 620 гаруй малчин өрхийн дундын брэнд юм.</p>
+  <p class="helper" style="font-size:14px;color:var(--ink)">Бид Францын Элчин сайдын яам ("Fonds Équipe France") болон AVSF (WIFI төсөл)-тэй хамтран нүүдлийн ахуйн уламжлалыг орчин үеийн стандартаар баталгаажуулж, Баянхонгорын үзэсгэлэнт байгаль, цэвэр бэлчээрийн шимийг агуулсан энэхүү эрүүл махийг та бүхэндээ бахархалтайгаар өргөн барьж байна.</p>
   <div class="ok" style="text-align:center;font-weight:750;font-size:14px">Эрүүл бэлчээр ➔ Эрүүл мал ➔ Эрүүл мах</div>
-  <p class="helper" style="margin-top:8px">Энэ бол бидний хэрэглэгчдэдээ амлаж буй баталгаат мөшгилт, чанарын стандартын замнал юм.</p>
+  <p class="helper" style="margin-top:8px">Энэ бол бидний хэрэглэгчдэдээ амлаж буй MNS 6891 стандартаар баталгаажсан, мөшгих тогтолцоотой, чанарын стандартын замнал юм.</p>
 </div>`;
 
 // Static storage guide -- same on every scan.
@@ -27,11 +27,28 @@ const storageHtml=`<div class="card">
   </table>
 </div>`;
 
+// Static footer -- same on every scan. Feedback line, Facebook follow, and
+// the closing brand line.
+const footerHtml=`<div class="card" style="text-align:center">
+  <div style="margin-bottom:18px">
+    <div class="helper" style="margin-bottom:8px">Санал хүсэлт илгээх</div>
+    <a href="tel:+97696555060" style="display:inline-block;text-decoration:none;background:var(--primary);color:#fff;padding:12px 26px;border-radius:10px;font-weight:650;font-size:15px">📞 9655-5060</a>
+  </div>
+  <div style="margin-bottom:14px">
+    <div class="helper" style="margin-bottom:8px">Биднийг дагаарай</div>
+    <a href="https://www.facebook.com/profile.php?id=61589607076007" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:#1877F2;font-weight:700;font-size:15px">
+      <svg width="26" height="26" viewBox="0 0 24 24"><path fill="#1877F2" d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06C2 17.06 5.66 21.2 10.44 22v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.91h-2.34V22C18.34 21.2 22 17.06 22 12.06z"/></svg>
+      Facebook хуудас
+    </a>
+  </div>
+  <div style="font-weight:800;font-size:16px;color:var(--primary-dark)">Эрүүл бэлчээрийн тансаг амт!</div>
+</div>`;
+
 if(!c||!cfg.SUPABASE_URL||cfg.SUPABASE_URL.includes('PASTE_')){root.innerHTML=heroHtml+'<div class="card"><h2 class="section-title">Тохиргоо хийгдээгүй</h2><p>Supabase тохиргоог config.js файлд оруулна уу.</p></div>';return}
 if(!code){root.innerHTML=heroHtml+'<div class="card"><h2 class="section-title">Бүтээгдэхүүний код алга</h2></div>';return}
 const client=c.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
 const r=await client.from('public_products').select('*').eq('product_code',code).maybeSingle();
-if(r.error||!r.data){root.innerHTML=heroHtml+storyHtml+'<div class="card"><div class="warn">Бүтээгдэхүүн олдсонгүй.</div></div>';return}
+if(r.error||!r.data){root.innerHTML=heroHtml+storyHtml+'<div class="card"><div class="warn">Бүтээгдэхүүн олдсонгүй.</div></div>'+footerHtml;return}
 const x=r.data;
 
 const detailHtml=`<div class="card">
@@ -60,7 +77,7 @@ const detailHtml=`<div class="card">
   <p class="helper" style="margin-top:12px">Код: ${escapeHtml(x.product_code)}</p>
 </div>`;
 
-root.innerHTML=heroHtml+storyHtml+detailHtml+storageHtml;
+root.innerHTML=heroHtml+storyHtml+detailHtml+storageHtml+footerHtml;
 if(window.QRCode){QRCode.toCanvas(document.createElement('canvas'),location.href,{width:180,margin:2},(err,canvas)=>{if(!err)document.getElementById('qr').appendChild(canvas)})}
 })();
 </script></body></html>
