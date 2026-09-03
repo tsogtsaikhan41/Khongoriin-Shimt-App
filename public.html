@@ -1,8 +1,65 @@
 <!doctype html>
 <html lang="mn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#005A4C"><title>Хонгорын Шимт — Мөшгөлт</title><link rel="icon" href="./icon-192.png"><link rel="stylesheet" href="./styles.css"></head>
-<body><header class="topbar"><div class="brand"><img class="logo-img" src="./logo-mark.png" alt="Хонгорын Шимт"><div class="titles"><b>Хонгорын Шимт</b><span>Бүтээгдэхүүний мөшгөлт</span></div></div></header><main id="publicApp"><div class="card"><h2 class="section-title">Уншиж байна...</h2></div></main>
+<body><header class="topbar"><div class="brand"><img class="logo-img" src="./logo-mark.png" alt="Хонгорын Шимт"><div class="titles"><b>Хонгорын Шимт</b><span>Бүтээгдэхүүний гарал үүслийн мөшгилт</span></div></div></header><main id="publicApp"><div class="card"><h2 class="section-title">Уншиж байна...</h2></div></main>
 <script src="./config.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script>
-(async()=>{const c=window.supabase;const cfg=window.APP_CONFIG||{};const code=new URLSearchParams(location.search).get('code');const root=document.getElementById('publicApp');if(!c||!cfg.SUPABASE_URL||cfg.SUPABASE_URL.includes('PASTE_')){root.innerHTML='<div class="card"><h2 class="section-title">Тохиргоо хийгдээгүй</h2><p>Supabase тохиргоог config.js файлд оруулна уу.</p></div>';return}if(!code){root.innerHTML='<div class="card"><h2 class="section-title">Бүтээгдэхүүний код алга</h2></div>';return}const client=c.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);const r=await client.from('public_products').select('*').eq('product_code',code).maybeSingle();if(r.error||!r.data){root.innerHTML='<div class="card"><div class="warn">Бүтээгдэхүүн олдсонгүй.</div></div>';return}const x=r.data;root.innerHTML=`<div class="card"><div id="qr" style="text-align:center"></div><h2 class="section-title">${escapeHtml(x.product_type)}</h2><div class="stat-grid"><div class="stat"><div class="n">${escapeHtml(x.animal_type)}</div><div class="l">Малын төрөл</div></div><div class="stat"><div class="n">${escapeHtml(x.soum)}</div><div class="l">Сум</div></div></div><table><tr><th>Малчин</th><td>${escapeHtml(x.herder_name||'—')}</td></tr><tr><th>Нядалга</th><td>${escapeHtml(x.processing_date||'—')}</td></tr><tr><th>Савлагаа</th><td>${escapeHtml(x.packaging_date||'—')}</td></tr><tr><th>Баталгаажуулалт</th><td>${x.certified?'Тийм':'—'}</td></tr></table><p class="helper" style="margin-top:12px">Код: ${escapeHtml(x.product_code)}</p></div>`;if(window.QRCode){QRCode.toCanvas(document.createElement('canvas'),location.href,{width:180,margin:2},(err,canvas)=>{if(!err)document.getElementById('qr').appendChild(canvas)})}function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+(async()=>{
+const c=window.supabase;const cfg=window.APP_CONFIG||{};const code=new URLSearchParams(location.search).get('code');const root=document.getElementById('publicApp');
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+// Static brand story -- same on every scan, doesn't depend on the product.
+const storyHtml=`<div class="card">
+  <h2 class="section-title" style="margin-bottom:2px">Эрхэм хэрэглэгч танд баярлалаа!</h2>
+  <p class="helper" style="font-size:14px;color:var(--ink)">«Хонгорын Шимт» брэнд нь Баянхонгор аймгийн Баян-Цагаан, Богд, Бөмбөгөр, Жинст сумын 620 гаруй малчин өрхийг нэгтгэсэн 4 анхан шатны хоршооны хамтын брэнд юм.</p>
+  <p class="helper" style="font-size:14px;color:var(--ink)">Франц улсын Элчин сайдын яам болон AVSF-ийн тусламжтайгаар бид малын эрүүл мэнд, бэлчээрийн даацыг онцгойлон анхаарч, уламжлалт маллагааг орчин үеийн стандарттай хослууллаа. Баянхонгорын үзэсгэлэнт байгаль, цэвэр бэлчээрийн шимийг агуулсан энэхүү эрүүл махийг та бүхэндээ бахархалтайгаар өргөн барьж байна.</p>
+  <div class="ok" style="text-align:center;font-weight:750;font-size:14px">Эрүүл бэлчээр ➔ Эрүүл мал ➔ Эрүүл мах</div>
+  <p class="helper" style="margin-top:8px">Энэ бол бидний хэрэглэгчдэдээ амлаж буй баталгаат мөшгилт, чанарын стандартын замнал юм.</p>
+</div>`;
+
+// Static storage guide -- same on every scan.
+const storageHtml=`<div class="card">
+  <h3 style="margin-top:0">🧊 Хадгалах горим</h3>
+  <table><tr><th>Хадгалах орчин</th><th>Температур</th><th>Хадгалах хугацаа</th><th>Анхаарах зүйлс</th></tr>
+  <tr><td>Хөргөгчид (Шинэхэн)</td><td>0°C ... +4°C</td><td>2 – 3 хоног</td><td>Задалснаас хойш шууд хэрэглэх эсвэл хөлдөөх</td></tr>
+  <tr><td>Вакуум савлагаатай</td><td>0°C ... +4°C</td><td>14 – 21 хоног</td><td>Хөргүүрт савлагааг задлахгүй хадгалах</td></tr>
+  <tr><td>Хөлдөөгчид (Гүн хөлдөөсөн)</td><td>-18°C ба түүнээс доош</td><td>6 – 12 сар</td><td>Гэсгээсний дараа дахин хөлдөөж болохгүй</td></tr>
+  </table>
+</div>`;
+
+if(!c||!cfg.SUPABASE_URL||cfg.SUPABASE_URL.includes('PASTE_')){root.innerHTML='<div class="card"><h2 class="section-title">Тохиргоо хийгдээгүй</h2><p>Supabase тохиргоог config.js файлд оруулна уу.</p></div>';return}
+if(!code){root.innerHTML='<div class="card"><h2 class="section-title">Бүтээгдэхүүний код алга</h2></div>';return}
+const client=c.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
+const r=await client.from('public_products').select('*').eq('product_code',code).maybeSingle();
+if(r.error||!r.data){root.innerHTML=storyHtml+'<div class="card"><div class="warn">Бүтээгдэхүүн олдсонгүй.</div></div>';return}
+const x=r.data;
+
+const detailHtml=`<div class="card">
+  <div id="qr" style="text-align:center;margin-bottom:10px"></div>
+  <h2 class="section-title" style="margin-bottom:0">📦 ${escapeHtml(x.product_type)}</h2>
+  <p class="helper" style="margin-top:0">Бүтээгдэхүүний дэлгэрэнгүй мэдээлэл</p>
+
+  <h3 style="margin-bottom:6px">1. Малчин ба гарал үүсэл</h3>
+  <table>
+   <tr><th>Малчны нэр</th><td>${escapeHtml(x.herder_name||'—')}</td></tr>
+   <tr><th>Байршил</th><td>Баянхонгор аймаг, ${escapeHtml(x.soum||'—')} сум</td></tr>
+   <tr><th>Хоршоо</th><td>«Хонгорын Шимт» анхан шатны хоршоо</td></tr>
+   <tr><th>Сүүлийн вакцинжуулалт</th><td>${escapeHtml(x.last_vaccination_date||'—')}</td></tr>
+   <tr><th>«Хариуцлагатай нүүдэлчин» баталгаажуулалт</th><td>${x.certified?'✅ Тийм (Сертификаттай)':'—'}</td></tr>
+  </table>
+
+  <h3 style="margin-bottom:6px;margin-top:16px">2. Боловсруулалт ба түүх</h3>
+  <table>
+   <tr><th>Малын төрөл</th><td>${escapeHtml(x.animal_type||'—')}</td></tr>
+   <tr><th>Нас</th><td>${x.estimated_age_years?escapeHtml(x.estimated_age_years)+' настай':'—'}</td></tr>
+   <tr><th>Төхөөрсөн огноо</th><td>${escapeHtml(x.processing_date||'—')}</td></tr>
+   <tr><th>Бүтээгдэхүүн савласан огноо</th><td>${escapeHtml(x.packaging_date||'—')}</td></tr>
+   <tr><th>Бүтээгдэхүүний төрөл</th><td>${escapeHtml(x.product_type||'—')}</td></tr>
+  </table>
+
+  <p class="helper" style="margin-top:12px">Код: ${escapeHtml(x.product_code)}</p>
+</div>`;
+
+root.innerHTML=storyHtml+detailHtml+storageHtml;
+if(window.QRCode){QRCode.toCanvas(document.createElement('canvas'),location.href,{width:180,margin:2},(err,canvas)=>{if(!err)document.getElementById('qr').appendChild(canvas)})}
 })();
 </script></body></html>
