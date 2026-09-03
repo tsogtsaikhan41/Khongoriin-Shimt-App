@@ -320,13 +320,36 @@ function renderPackaging(){
 }
 async function createProduct(fd){
  const mid=String(fd.get('material_id')),w=num(fd.get('weight'));const m=cache.materials.find(x=>x.id===mid);if(!m||w<=0)return toast('Материал/жин буруу');if(w>num(m.current_available)+.0001)return toast('Үлдэгдлээс их байна');
- try{const productId=uuid();const srcAnimal=cache.animals.find(a=>a.id===m.animal_id);const productCode=`${srcAnimal?.animal_code||m.animal_id.slice(0,8)}-P${productId.slice(0,6).toUpperCase()}`;await rpc('create_product',{p_product_id:productId,p_product_code:productCode,p_material_id:mid,p_weight_kg:w,p_product_type:String(fd.get('product_type')),p_packaging_date:String(fd.get('date')),p_packaging_cost:num(fd.get('cost')),p_note:fd.get('note')||null,p_qty:KHORKHOG[fd.get('product_type')]?num($('khQty').value):1,p_unit:KHORKHOG[fd.get('product_type')]?'ширхэг':'кг',p_unit_weight_kg:KHORKHOG[fd.get('product_type')]||null,p_user_id:session.user.id});await pullData();toast('Бүтээгдэхүүн хадгалагдлаа');renderPackaging()}catch(err){toast('Алдаа: '+errMn(err))}
+ // Хорхог is sold as whole packages, so qty is the package COUNT and the
+ // unit weight is fixed. Everything else is sold by weight, so qty is the
+ // kilogram amount itself -- that keeps one product row honest either way.
+ const isKhorkhog=String(fd.get('product_type'))==='Хорхог багц';
+ const unitW=isKhorkhog?($('khSize').value==='custom'?num($('khCustom').value):num($('khSize').value)):null;
+ if(isKhorkhog&&(!unitW||num($('khQty').value)<1))return toast('Багцын жин ба тоог зөв бөглөнө үү');
+ try{const productId=uuid();const srcAnimal=cache.animals.find(a=>a.id===m.animal_id);const productCode=`${srcAnimal?.animal_code||m.animal_id.slice(0,8)}-P${productId.slice(0,6).toUpperCase()}`;await rpc('create_product',{p_product_id:productId,p_product_code:productCode,p_material_id:mid,p_weight_kg:w,p_product_type:String(fd.get('product_type')),p_packaging_date:String(fd.get('date')),p_packaging_cost:num(fd.get('cost')),p_note:fd.get('note')||null,p_qty:isKhorkhog?num($('khQty').value):w,p_unit:isKhorkhog?'ширхэг':'кг',p_unit_weight_kg:isKhorkhog?unitW:null,p_user_id:session.user.id});await pullData();toast('Бүтээгдэхүүн хадгалагдлаа');renderPackaging()}catch(err){toast('Алдаа: '+errMn(err))}
 }
 
 function renderSales(){
- const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));
- $('view').innerHTML=formCard(`<form id="saleForm"><label>Бүтээгдэхүүн</label><select name="product_id" id="saleProduct" required>${ps.map(p=>`<option value="${p.id}">${esc(p.product_code)} · ${esc(p.animal_type||'')} · ${esc(p.product_type)} · ${fmtKg(p.current_available)} ${esc(p.unit)}</option>`).join('')||'<option value="">Зарах бүтээгдэхүүн алга</option>'}</select><div class="helper" id="saleRemain"></div><label>Тоо хэмжээ</label><input name="qty" id="saleQty" type="number" min="0.1" step="0.001" required><label>Нэгжийн үнэ (₮)</label><input name="price" type="number" min="0" step="1" required><div class="calc-box"><span>Нийт дүн:</span><b id="saleTotal">0 ₮</b></div><label>Огноо</label><input name="date" type="date" value="${today()}" required><label>Хэрэглэгч (заавал биш)</label><input name="customer"><label>Утас (заавал биш)</label><input name="customer_phone"><button class="btn-primary">Хадгалах</button></form>`);
- const f=$('saleForm');function c(){const p=cache.products.find(x=>x.id===f.product_id.value);$('saleRemain').textContent=p?`Үлдэгдэл: ${fmt(p.current_available)} ${p.unit}`:'';$('saleQty').max=p?.current_available||'';$('saleTotal').textContent=fmt(num(f.qty.value)*num(f.price.value),0)+' ₮'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const p=cache.products.find(x=>x.id===f.product_id.value);if(!p)return;const q=num(f.qty.value);if(q>num(p.current_available)+.0001)return toast('Үлдэгдлээс их байна');try{await rpc('create_sale',{p_sale_id:uuid(),p_product_id:p.id,p_qty:q,p_unit_price:num(f.price.value),p_sale_date:String(f.date.value),p_customer:String(f.customer.value||''),p_customer_phone:String(f.customer_phone.value||''),p_user_id:session.user.id});await pullData();toast('Борлуулалт хадгалагдлаа');renderSales()}catch(err){toast('Алдаа: '+errMn(err))}};c();
+ // Only products with stock left can be sold. Sold-out items remain visible
+ // in Агуулах (with a Дууссан badge and their QR) but not here.
+ const ps=cache.products.filter(p=>num(p.current_available)>0);
+ $('view').innerHTML=formCard(`<form id="saleForm"><label>Бүтээгдэхүүн</label><select name="product_id" id="saleProduct" required>${ps.map(p=>`<option value="${p.id}">${esc(p.product_code)} · ${esc(p.animal_type||'')} · ${esc(p.product_type)} · ${p.unit==='ширхэг'?fmt(p.current_available,0)+' ширхэг ('+fmtKg(p.unit_weight_kg||0)+' кг/ш)':fmtKg(p.current_available)+' кг'}</option>`).join('')||'<option value="">Зарах бүтээгдэхүүн алга</option>'}</select><div class="helper" id="saleRemain"></div><label id="saleQtyLabel">Тоо хэмжээ</label><input name="qty" id="saleQty" type="number" min="0.001" step="0.001" required><div class="helper" id="saleWeightHint"></div><label>Нэгжийн үнэ (₮)</label><input name="price" type="number" min="0" step="1" required><div class="calc-box"><span>Нийт дүн:</span><b id="saleTotal">0 ₮</b></div><label>Огноо</label><input name="date" type="date" value="${today()}" required><label>Хэрэглэгч (заавал биш)</label><input name="customer"><label>Утас (заавал биш)</label><input name="customer_phone"><button class="btn-primary">Хадгалах</button></form>`);
+ const f=$('saleForm');
+ function c(){
+   const p=cache.products.find(x=>x.id===f.product_id.value);
+   const pack=p&&p.unit==='ширхэг';
+   // Packaged goods sell as whole units -- a 1.5 kg Хорхог cannot be sold as
+   // 1 kg. Everything else is weighed, so grams are allowed.
+   $('saleQtyLabel').textContent=pack?'Хэдэн ширхэг':'Нийт жин (кг)';
+   $('saleQty').step=pack?'1':'0.001';
+   $('saleQty').min=pack?'1':'0.001';
+   if(pack&&f.qty.value)f.qty.value=String(Math.max(1,Math.floor(num(f.qty.value))));
+   $('saleRemain').textContent=p?(pack?`Үлдэгдэл: ${fmt(p.current_available,0)} ширхэг`:`Үлдэгдэл: ${fmtKg(p.current_available)} кг`):'';
+   $('saleQty').max=p?.current_available||'';
+   $('saleWeightHint').textContent=(pack&&p.unit_weight_kg&&f.qty.value)?`Нийт жин: ${fmtKg(num(f.qty.value)*num(p.unit_weight_kg))} кг`:'';
+   $('saleTotal').textContent=fmt(num(f.qty.value)*num(f.price.value),0)+' ₮';
+ }
+ f.oninput=c;f.onchange=c;c();f.onsubmit=async e=>{e.preventDefault();const p=cache.products.find(x=>x.id===f.product_id.value);if(!p)return;const q=num(f.qty.value);if(q>num(p.current_available)+.0001)return toast('Үлдэгдлээс их байна');try{await rpc('create_sale',{p_sale_id:uuid(),p_product_id:p.id,p_qty:q,p_unit_price:num(f.price.value),p_sale_date:String(f.date.value),p_customer:String(f.customer.value||''),p_customer_phone:String(f.customer_phone.value||''),p_user_id:session.user.id});await pullData();toast('Борлуулалт хадгалагдлаа');renderSales()}catch(err){toast('Алдаа: '+errMn(err))}};c();
 }
 
 function renderInventory(){
