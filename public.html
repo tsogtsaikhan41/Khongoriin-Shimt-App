@@ -8,6 +8,7 @@ const c=window.supabase;const cfg=window.APP_CONFIG||{};const code=new URLSearch
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
 // Static brand story -- same on every scan, doesn't depend on the product.
+const heroHtml=`<div style="text-align:center;padding:18px 0 4px"><img src="./logo-mark.png" alt="Хонгорын Шимт" style="width:140px;height:140px;border-radius:50%"></div>`;
 const storyHtml=`<div class="card">
   <h2 class="section-title" style="margin-bottom:2px">Эрхэм хэрэглэгч танд баярлалаа!</h2>
   <p class="helper" style="font-size:14px;color:var(--ink)">«Хонгорын Шимт» брэнд нь Баянхонгор аймгийн Баян-Цагаан, Богд, Бөмбөгөр, Жинст сумын 620 гаруй малчин өрхийг нэгтгэсэн 4 анхан шатны хоршооны хамтын брэнд юм.</p>
@@ -26,11 +27,11 @@ const storageHtml=`<div class="card">
   </table>
 </div>`;
 
-if(!c||!cfg.SUPABASE_URL||cfg.SUPABASE_URL.includes('PASTE_')){root.innerHTML='<div class="card"><h2 class="section-title">Тохиргоо хийгдээгүй</h2><p>Supabase тохиргоог config.js файлд оруулна уу.</p></div>';return}
-if(!code){root.innerHTML='<div class="card"><h2 class="section-title">Бүтээгдэхүүний код алга</h2></div>';return}
+if(!c||!cfg.SUPABASE_URL||cfg.SUPABASE_URL.includes('PASTE_')){root.innerHTML=heroHtml+'<div class="card"><h2 class="section-title">Тохиргоо хийгдээгүй</h2><p>Supabase тохиргоог config.js файлд оруулна уу.</p></div>';return}
+if(!code){root.innerHTML=heroHtml+'<div class="card"><h2 class="section-title">Бүтээгдэхүүний код алга</h2></div>';return}
 const client=c.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
 const r=await client.from('public_products').select('*').eq('product_code',code).maybeSingle();
-if(r.error||!r.data){root.innerHTML=storyHtml+'<div class="card"><div class="warn">Бүтээгдэхүүн олдсонгүй.</div></div>';return}
+if(r.error||!r.data){root.innerHTML=heroHtml+storyHtml+'<div class="card"><div class="warn">Бүтээгдэхүүн олдсонгүй.</div></div>';return}
 const x=r.data;
 
 const detailHtml=`<div class="card">
@@ -44,7 +45,7 @@ const detailHtml=`<div class="card">
    <tr><th>Байршил</th><td>Баянхонгор аймаг, ${escapeHtml(x.soum||'—')} сум</td></tr>
    <tr><th>Хоршоо</th><td>«Хонгорын Шимт» анхан шатны хоршоо</td></tr>
    <tr><th>Сүүлийн вакцинжуулалт</th><td>${escapeHtml(x.last_vaccination_date||'—')}</td></tr>
-   <tr><th>«Хариуцлагатай нүүдэлчин» баталгаажуулалт</th><td>${x.certified?'✅ Тийм (Сертификаттай)':'—'}</td></tr>
+   <tr><th>«Хариуцлагатай нүүдэлчин» (MNS 6891) баталгаажуулалт</th><td>${x.certified?'✅ Тийм (MNS 6891 сертификатаар баталгаажсан)':'—'}</td></tr>
   </table>
 
   <h3 style="margin-bottom:6px;margin-top:16px">2. Боловсруулалт ба түүх</h3>
@@ -59,7 +60,7 @@ const detailHtml=`<div class="card">
   <p class="helper" style="margin-top:12px">Код: ${escapeHtml(x.product_code)}</p>
 </div>`;
 
-root.innerHTML=storyHtml+detailHtml+storageHtml;
+root.innerHTML=heroHtml+storyHtml+detailHtml+storageHtml;
 if(window.QRCode){QRCode.toCanvas(document.createElement('canvas'),location.href,{width:180,margin:2},(err,canvas)=>{if(!err)document.getElementById('qr').appendChild(canvas)})}
 })();
 </script></body></html>
