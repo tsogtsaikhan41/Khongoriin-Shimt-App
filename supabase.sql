@@ -29,6 +29,9 @@ create trigger on_auth_user_created after insert on auth.users for each row exec
 create table if not exists public.herders (
   id uuid primary key default gen_random_uuid(),
   full_name text not null,
+  surname text,
+  given_name text,
+  aimag text,
   soum text not null,
   location_detail text,
   herd_size numeric,
