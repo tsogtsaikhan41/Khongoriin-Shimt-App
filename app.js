@@ -352,8 +352,45 @@ function renderSales(){
  f.oninput=c;f.onchange=c;c();f.onsubmit=async e=>{e.preventDefault();const p=cache.products.find(x=>x.id===f.product_id.value);if(!p)return;const q=num(f.qty.value);if(q>num(p.current_available)+.0001)return toast('Үлдэгдлээс их байна');try{await rpc('create_sale',{p_sale_id:uuid(),p_product_id:p.id,p_qty:q,p_unit_price:num(f.price.value),p_sale_date:String(f.date.value),p_customer:String(f.customer.value||''),p_customer_phone:String(f.customer_phone.value||''),p_user_id:session.user.id});await pullData();toast('Борлуулалт хадгалагдлаа');renderSales()}catch(err){toast('Алдаа: '+errMn(err))}};c();
 }
 
+// Агуулах is now 4 dedicated pages behind tab buttons instead of one long
+// scroll. Each tab is its own read model over data that already exists in
+// `cache` -- no schema or sync changes, purely presentation.
+const INV_TABS=[
+ {id:'materials',label:'Хүлээн авсан мах'},
+ {id:'products',label:'Бүтээгдэхүүн'},
+ {id:'sales',label:'Борлуулсан'}
+];
+let INV_TAB='materials';
 function renderInventory(){
- const mats=cache.materials.filter(m=>num(m.current_available)>0);const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));$('view').innerHTML=`<div class="card"><h3 style="margin-top:0">Хүлээн авсан махны нөөц</h3>${mats.length?`<table><tr><th>Амьтан</th><th>Мал</th><th>Төрөл</th><th>Байршил</th><th>Үлдэгдэл</th></tr>${mats.map(m=>`<tr><td>${esc(m.animal_code||'—')}</td><td>${esc(m.animal_type||'')}</td><td>${esc(m.material_type==='MEAT'?'Мах':'Дайвар')}</td><td>${esc(m.location_type||'')}</td><td><b>${fmtKg(m.current_available)} кг</b></td></tr>`).join('')}</table>`:'<div class="empty">Материалын үлдэгдэл алга</div>'}</div><div class="card"><h3 style="margin-top:0">Бүтээгдэхүүн</h3>${ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?fmt(p.current_available)+' '+esc(p.unit):'<span class="badge bad">Дууссан</span>'}</b></td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="deleteRecord('products','${p.id}','${esc(p.product_code)}')">Устгах</button>`:''}</td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>'}</div>`;
+ const tabs=INV_TABS.map(t=>`<button class="btn-secondary" style="flex:1;min-width:0;padding:9px 6px;font-size:12.5px;${INV_TAB===t.id?'background:var(--primary);color:#fff;border-color:var(--primary)':''}" onclick="invTab('${t.id}')">${t.label}</button>`).join('');
+ $('view').innerHTML=`<div class="actions" style="margin-bottom:14px;gap:6px;flex-wrap:nowrap">${tabs}</div><div id="invBody"></div>`;
+ renderInvBody();
+}
+function invTab(id){INV_TAB=id;renderInventory()}
+function renderInvBody(){
+ const body=$('invBody');if(!body)return;
+ if(INV_TAB==='materials')return renderInvMaterials(body);
+ if(INV_TAB==='products')return renderInvProducts(body);
+ if(INV_TAB==='sales')return renderInvSales(body);
+}
+function renderInvMaterials(body){
+ // Only lots that actually completed Хүлээн авалт → Дэлгүүрт хүлээн авах
+ // (location_type SHOP) show up here -- material still sitting at a soum,
+ // or already fully packaged into products, is intentionally excluded.
+ const mats=cache.materials.filter(m=>m.location_type==='SHOP'&&num(m.current_available)>0);
+ body.innerHTML=formCard(mats.length?`<table><tr><th>Амьтан</th><th>Мал</th><th>Төрөл</th><th>Үлдэгдэл</th></tr>${mats.map(m=>`<tr><td>${esc(m.animal_code||'—')}</td><td>${esc(m.animal_type||'')}</td><td>${esc(m.material_type==='MEAT'?'Мах':'Дайвар')}</td><td><b>${fmtKg(m.current_available)} кг</b></td></tr>`).join('')}</table>`:'<div class="empty">Дэлгүүрт хүлээн авсан материал алга</div>');
+}
+function renderInvProducts(body){
+ const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));
+ body.innerHTML=formCard(ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?fmt(p.current_available)+' '+esc(p.unit):'<span class="badge bad">Дууссан</span>'}</b></td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="deleteRecord('products','${p.id}','${esc(p.product_code)}')">Устгах</button>`:''}</td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>');
+}
+function renderInvSales(body){
+ const items=cache.sales.slice().sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||'')||new Date(b.created_at||0)-new Date(a.created_at||0));
+ body.innerHTML=formCard(items.length?`<table><tr><th>Огноо</th><th>Бүтээгдэхүүн</th><th>Тоо хэмжээ</th><th>Дүн</th><th>Харилцагч</th><th></th></tr>${items.map(s=>{
+   const p=cache.products.find(x=>x.id===s.product_id);
+   const qtyLabel=p?.unit==='ширхэг'?`${fmt(s.qty,0)} ширхэг`:`${fmtKg(s.qty)} кг`;
+   return `<tr><td>${esc(s.sale_date||'')}</td><td>${esc(p?.product_code||'—')}<div class="helper">${esc(p?.product_type||'')}</div></td><td>${qtyLabel}</td><td><b>${fmt(s.total_amount,0)}₮</b></td><td>${esc(s.customer||'—')}</td><td>${p?`<button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>`:''}</td></tr>`;
+ }).join('')}</table>`:'<div class="empty">Борлуулалт алга</div>');
 }
 function renderDashboard(){
  const purchased=cache.animals.filter(a=>a.purchase_date).length;const meat=cache.materials.filter(m=>m.material_type==='MEAT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);const byp=cache.materials.filter(m=>m.material_type==='BYPRODUCT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);const revenue=cache.sales.reduce((s,x)=>s+num(x.total_amount),0);const costs=cache.animals.reduce((s,x)=>s+num(x.total_cost),0)+cache.processing_events.reduce((s,x)=>s+num(x.processing_cost),0)+cache.transports.reduce((s,x)=>s+num(x.cost),0)+cache.products.reduce((s,x)=>s+num(x.packaging_cost),0);$('view').innerHTML=`<div class="stat-grid"><div class="stat"><div class="n">${fmt(purchased,0)}</div><div class="l">Худалдан авсан амьтан</div></div><div class="stat"><div class="n">${fmt(meat)}</div><div class="l">Махны гарц, кг</div></div><div class="stat"><div class="n">${fmt(byp)}</div><div class="l">Дайвар, кг</div></div><div class="stat"><div class="n">${fmt(revenue,0)}₮</div><div class="l">Борлуулалт</div></div><div class="stat"><div class="n">${fmt(costs,0)}₮</div><div class="l">Бүртгэгдсэн зардал</div></div><div class="stat"><div class="n">${fmt(revenue-costs,0)}₮</div><div class="l">Энгийн зөрүү</div></div></div><div class="card"><b>Мэдээллийн төлөв</b><div class="helper">Тооцоолол нь одоогийн бүртгэл дээр тулгуурлана. Санхүүгийн бүрэн нягтлан бодох бүртгэл биш.</div></div>`;
