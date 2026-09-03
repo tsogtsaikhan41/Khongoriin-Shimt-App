@@ -139,7 +139,7 @@ function ic(name){
  const paths={
   dashboard:`<path ${P} d="M3 13h5v8H3zM10 3h5v18h-5zM17 9h5v12h-5z"/>`,
   purchase:`<path ${P} d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/><circle cx="10" cy="20" r="1.3" ${P}/><circle cx="17" cy="20" r="1.3" ${P}/>`,
-  processing:`<path ${P} d="M14 3l7 7-4 4-7-7zM10.5 10.5L3 18v3h3l7.5-7.5"/>`,
+  processing:`<path ${P} d="M3.5 11c-.4-2.2 1-4 3-3.6.9-2.2 3.4-3.2 5.6-2.2 2.6 1.1 4.6 3.2 6 5.6 1.4 2.5 1 5.3-1.6 7C14.2 19.5 10.3 20 7.3 18 4.6 16.2 3.3 13.5 3.5 11z"/><path ${P} d="M7.3 8.8l2.6 3"/><path ${P} d="M11.3 7.6l2.9 4.4"/><path ${P} d="M6.6 13.6l3.3 2.6"/>`,
   transport:`<path ${P} d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.6" ${P}/><circle cx="17.5" cy="18" r="1.6" ${P}/>`,
   receiving:`<path ${P} d="M12 3v10m0 0l-3.5-3.5M12 13l3.5-3.5"/><path ${P} d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>`,
   packaging:`<path ${P} d="M3 8l9-4 9 4-9 4z"/><path ${P} d="M3 8v8l9 4 9-4V8"/><path ${P} d="M12 12v8"/>`,
