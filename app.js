@@ -97,7 +97,7 @@ function renderLogin(){
 
 function shell(){
   $('app').innerHTML=`
-  <header class="topbar"><div class="brand"><span class="logo">🐑</span><div class="titles"><b>Мах Хяналт</b><span id="userLabel"></span></div></div><div class="top-actions"><span id="netDot" class="status-dot"></span><select class="top-select" id="soumSelect"><option value="">Сум сонгох</option></select><button class="backbtn" id="logoutBtn">Гарах</button></div></header>
+  <header class="topbar"><div class="brand"><img class="logo-img" src="./logo-mark.png" alt="Хонгорын Шимт"><div class="titles"><b>Мах Хяналт</b><span id="userLabel"></span></div></div><div class="top-actions"><span id="netDot" class="status-dot"></span><select class="top-select" id="soumSelect"><option value="">Сум сонгох</option></select><button class="backbtn" id="logoutBtn">Гарах</button></div></header>
   <main id="main"></main>`;
   SOUMS.forEach(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=s.name;$('soumSelect').appendChild(o)});const sh=document.createElement('option');sh.value='Дэлгүүр';sh.textContent='Дэлгүүр (төв)';$('soumSelect').appendChild(sh);
   // An admin with an assigned soum works only from that location, so the
@@ -128,7 +128,7 @@ function shell(){
 function updateNet(){const d=$('netDot');if(!d)return;d.className='status-dot '+(isOnline()?'status-online':'status-offline');d.title=isOnline()?'Интернэттэй':'Интернэтгүй'}
 function renderHome(){
  const soum=settings.soum||'Сум сонгоогүй';
- $('main').innerHTML=`<div class="syncbar"><span class="status-dot ${isOnline()?'status-online':'status-offline'}"></span><span>${isOnline()?'Интернэттэй':'Интернэтгүй'} · ${settings.lastSync?'Сүүлд синк: '+new Date(settings.lastSync).toLocaleString('mn-MN'):'Одоогоор синк хийгдээгүй'}</span><span style="margin-left:auto"><button class="btn-ghost" onclick="syncNow().then(refreshAll)">🔄 Синк</button></span></div>
+ $('main').innerHTML=`<div class="syncbar"><span class="status-dot ${isOnline()?'status-online':'status-offline'}"></span><span>${isOnline()?'Интернэттэй':'Интернэтгүй'} · ${settings.lastSync?'Сүүлд синк: '+new Date(settings.lastSync).toLocaleString('mn-MN'):'Одоогоор синк хийгдээгүй'}</span><span style="margin-left:auto"><button class="btn-ghost" onclick="syncNow().then(refreshAll)"><span class="ic">🔄</span> Синк</button></span></div>
  <div class="grid">
  <div class="tile wide dashboard" onclick="navigate('dashboard')"><div><div class="label">📊 Хянах самбар</div><div class="sub">Зардал, борлуулалт, гарц</div></div><div style="font-size:26px">›</div></div>
  <div class="tile" onclick="navigate('purchase')"><div class="icon">🛒</div><div class="label">Худалдан авалт</div><div class="sub">Малчнаас мал авах</div></div>
