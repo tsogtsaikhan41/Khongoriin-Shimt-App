@@ -23,7 +23,10 @@ const fmt=(v,dec=1)=>num(v).toLocaleString('mn-MN',{maximumFractionDigits:dec});
 // Weights always show 3 decimals (12 -> 12.000) so partial cuts like
 // 3.545 kg are never silently rounded. Money stays whole tögrög.
 const fmtKg=v=>num(v).toLocaleString('mn-MN',{minimumFractionDigits:3,maximumFractionDigits:3});
-const today=()=>new Date().toISOString().slice(0,10);
+// Local calendar date, not UTC. Mongolia is UTC+8, so toISOString() would
+// return the previous day for any local time before 08:00 -- which silently
+// pre-filled forms with yesterday's date during early-morning work.
+const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
 function isOnline(){return navigator.onLine}
 function uuid(){return crypto.randomUUID()}
@@ -229,7 +232,7 @@ async function createPurchase(fd){
    }
  }
  const live=num(fd.get('liveWeight')), price=num(fd.get('pricePerKg'));
- const animal={id:uuid(),animal_code:`${(SOUMS.find(s=>s.name===soum)?.code||'GEN')}-${new Date(fd.get('date')+'T00:00:00').toISOString().slice(2,10).replace(/-/g,'')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`,herder_id:existing.id,soum,purchase_date:String(fd.get('date')),animal_type:animalType,estimated_age_years:null,live_weight_kg:live,price_per_kg:price,total_cost:live*price,status:'PURCHASED',note:fd.get('note')||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+ const animal={id:uuid(),animal_code:`${(SOUMS.find(s=>s.name===soum)?.code||'GEN')}-${String(fd.get('date')).slice(2).replace(/-/g,'')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`,herder_id:existing.id,soum,purchase_date:String(fd.get('date')),animal_type:animalType,estimated_age_years:null,live_weight_kg:live,price_per_kg:price,total_cost:live*price,status:'PURCHASED',note:fd.get('note')||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
  cache.animals.push({...animal,_sync_state:'pending'});await saveLocalRecord('animals',animal,'pending');
  if(isOnline()){try{const saved=await upsertDirect('animals',animal);cache.animals=cache.animals.filter(a=>a.id!==animal.id).concat({...saved,_sync_state:'synced'});await saveLocalRecord('animals',saved,'synced');toast('Хадгалагдлаа')}catch(err){await addOutbox('animal_create',animal);toast('Локалд хадгаллаа — синк хүлээж байна')}} else {await addOutbox('animal_create',animal);toast('Offline хадгаллаа — интернэт ормогц синк хийнэ')}
  $('purchaseForm').reset();$('purchaseTotal').textContent='0 ₮';renderPurchaseList();
@@ -238,7 +241,7 @@ function renderPurchaseList(){const el=$('purchaseList');if(!el)return;const ite
 
 function renderProcessing(){
  const animals=sourceAnimalOptions().filter(a=>a.status==='PURCHASED');
- $('view').innerHTML=(isOnline()?'':`<div class="warn">⚠️ Offline горим. Энэ амьтны худалдан авалт өмнө нь төв сервертэй синк болсон байх ёстой.</div>`)+formCard(`<form id="processingForm"><label>Амьтан</label><select name="animal_id" required>${animals.map(a=>`<option value="${a.id}">${esc(a.animal_code)} · ${esc(a.animal_type)} · ${fmtKg(a.live_weight_kg)} кг · ${esc(a.purchase_date||'')}</option>`).join('')||'<option value="">Боломжит амьтан алга</option>'}</select><label>Огноо</label><input type="date" name="date" value="${today()}" required><label>Нядалга хийсэн газар</label><input name="location" placeholder="Жишээ: сумын төв"><div class="row2"><div><label>Махны гарц (кг)</label><input type="number" name="meat_kg" min="0" step="0.001" required></div><div><label>Дайвар (кг)</label><input type="number" name="byproduct_kg" min="0" step="0.001" value="0" required></div></div><div class="calc-box"><span>Мал бэлтгэсний дараах жингийн зөрүү:</span><b id="procDiff">—</b></div><label>Зардал (₮)</label><input type="number" name="cost" min="0" step="1" value="0"><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
+ $('view').innerHTML=(isOnline()?'':`<div class="warn">⚠️ Offline горим. Энэ амьтны худалдан авалт өмнө нь төв сервертэй синк болсон байх ёстой.</div>`)+formCard(`<form id="processingForm"><label>Худалдан авсан малын жагсаалт</label><select name="animal_id" required>${animals.map(a=>`<option value="${a.id}">${esc(a.animal_code)} · ${esc(a.animal_type)} · ${fmtKg(a.live_weight_kg)} кг · ${esc(a.purchase_date||'')}</option>`).join('')||'<option value="">Боломжит амьтан алга</option>'}</select><label>Огноо</label><input type="date" name="date" value="${today()}" required><label>Мал төхөөрсөн байршил</label><input name="location" placeholder="Жишээ: сумын төв"><div class="row2"><div><label>Махны гарц (кг)</label><input type="number" name="meat_kg" min="0" step="0.001" required></div><div><label>Дайвар (кг)</label><input type="number" name="byproduct_kg" min="0" step="0.001" value="0" required></div></div><div class="calc-box"><span>Мал бэлтгэсний дараах жингийн зөрүү:</span><b id="procDiff">—</b></div><label>Зардал (₮)</label><input type="number" name="cost" min="0" step="1" value="0"><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
  const f=$('processingForm');function calc(){const a=cache.animals.find(x=>x.id===f.animal_id.value);const d=a?num(a.live_weight_kg)-num(f.meat_kg.value)-num(f.byproduct_kg.value):0;$('procDiff').textContent=fmtKg(d)+' кг'}f.oninput=calc;f.onsubmit=async e=>{e.preventDefault();await createProcessing(new FormData(f))};calc();
 }
 async function createProcessing(fd){
