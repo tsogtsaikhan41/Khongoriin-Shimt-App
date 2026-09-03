@@ -20,7 +20,7 @@
 //    JSON was expected and the app crashed on parse. The HTML fallback is now
 //    restricted to navigation requests only.
 
-const CACHE = 'khongor-shimt-v9';
+const CACHE = 'khongor-shimt-v10';
 
 const LOCAL_ASSETS = [
   './', './index.html', './app.js', './styles.css', './config.js',
@@ -31,7 +31,8 @@ const LOCAL_ASSETS = [
 const CDN = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
   'https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js',
-  'https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js'
+  'https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js',
+  'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js'
 ];
 
 self.addEventListener('install', event => {
