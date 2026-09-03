@@ -194,6 +194,7 @@ function renderPurchase(){
  <select name="certified"><option value="false">Үгүй</option><option value="true">Тийм</option></select>
  <label>Мал сүргийн вакцинд хамрагдсан огноо</label><input type="date" name="vaccinationDate" required>
  <label>Мал төрөл</label><select name="animalType" required><option value="">-- сонгох --</option><option>Ямаа</option><option>Хонь</option><option>Үхэр</option><option>Адуу</option><option>Тэмээ</option></select>
+ <label>Малын нас (жил)</label><input type="number" name="ageYears" min="0" step="0.5" required>
  <div class="row2"><div><label>Амьд жин (кг)</label><input type="number" name="liveWeight" min="0.1" step="0.001" required></div><div><label>Үнэ / кг (₮)</label><input type="number" name="pricePerKg" min="0" step="1" required></div></div>
  <div class="calc-box"><span>Нийт үнэ:</span><b id="purchaseTotal">0 ₮</b></div>
  <label>Тайлбар (заавал биш)</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`)+`<div id="purchaseList"></div>`;
@@ -234,13 +235,13 @@ async function createPurchase(fd){
      }catch(err){ /* keep the purchase moving; herder detail can be corrected later */ }
    }
  }
- const live=num(fd.get('liveWeight')), price=num(fd.get('pricePerKg'));
- const animal={id:uuid(),animal_code:`${(SOUMS.find(s=>s.name===soum)?.code||'GEN')}-${String(fd.get('date')).slice(2).replace(/-/g,'')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`,herder_id:existing.id,soum,purchase_date:String(fd.get('date')),animal_type:animalType,estimated_age_years:null,live_weight_kg:live,price_per_kg:price,total_cost:live*price,status:'PURCHASED',note:fd.get('note')||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+ const live=num(fd.get('liveWeight')), price=num(fd.get('pricePerKg')), ageYears=num(fd.get('ageYears'));
+ const animal={id:uuid(),animal_code:`${(SOUMS.find(s=>s.name===soum)?.code||'GEN')}-${String(fd.get('date')).slice(2).replace(/-/g,'')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`,herder_id:existing.id,soum,purchase_date:String(fd.get('date')),animal_type:animalType,estimated_age_years:ageYears,live_weight_kg:live,price_per_kg:price,total_cost:live*price,status:'PURCHASED',note:fd.get('note')||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
  cache.animals.push({...animal,_sync_state:'pending'});await saveLocalRecord('animals',animal,'pending');
  if(isOnline()){try{const saved=await upsertDirect('animals',animal);cache.animals=cache.animals.filter(a=>a.id!==animal.id).concat({...saved,_sync_state:'synced'});await saveLocalRecord('animals',saved,'synced');toast('Хадгалагдлаа')}catch(err){await addOutbox('animal_create',animal);toast('Локалд хадгаллаа — синк хүлээж байна')}} else {await addOutbox('animal_create',animal);toast('Offline хадгаллаа — интернэт ормогц синк хийнэ')}
  $('purchaseForm').reset();$('purchaseTotal').textContent='0 ₮';renderPurchaseList();
 }
-function renderPurchaseList(){const el=$('purchaseList');if(!el)return;const items=cache.animals.slice().reverse();el.innerHTML=items.length?items.map(a=>`<div class="list-item"><div class="top-row"><div class="batch">${esc(a.animal_code)}</div><div class="date">${esc(a.purchase_date)}</div></div><div class="details">${esc(cache.herders.find(h=>h.id===a.herder_id)?.full_name||'—')} · ${esc(a.soum)} · ${esc(a.animal_type)} · ${fmtKg(a.live_weight_kg)} кг · ${fmt(a.total_cost,0)}₮ ${a._sync_state!=='synced'?'<span class="badge neutral">Синк хүлээж байна</span>':''}</div></div>`).join(''):'<div class="empty"><div class="big">🗒️</div>Бичлэг алга байна</div>'}
+function renderPurchaseList(){const el=$('purchaseList');if(!el)return;const items=cache.animals.slice().reverse();el.innerHTML=items.length?items.map(a=>`<div class="list-item"><div class="top-row"><div class="batch">${esc(a.animal_code)}</div><div class="date">${esc(a.purchase_date)}</div></div><div class="details">${esc(cache.herders.find(h=>h.id===a.herder_id)?.full_name||'—')} · ${esc(a.soum)} · ${esc(a.animal_type)}${a.estimated_age_years?', '+fmt(a.estimated_age_years)+' нас':''} · ${fmtKg(a.live_weight_kg)} кг · ${fmt(a.total_cost,0)}₮ ${a._sync_state!=='synced'?'<span class="badge neutral">Синк хүлээж байна</span>':''}</div></div>`).join(''):'<div class="empty"><div class="big">🗒️</div>Бичлэг алга байна</div>'}
 
 function renderProcessing(){
  const animals=sourceAnimalOptions().filter(a=>a.status==='PURCHASED');
