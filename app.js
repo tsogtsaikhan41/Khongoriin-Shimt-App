@@ -397,8 +397,13 @@ function renderDashboard(){
 }
 const HIST_ENTITY={sales:'Борлуулалт',animals:'Худалдан авалт',herders:'Малчин',processing_events:'Мал төхөөрөх ажиллагаа',transports:'Тээвэрлэлт',transport_items:'Тээвэрлэлт',receivings:'Хүлээн авалт',products:'Баглаа боодол',material_lots:'Материал',profiles:'Хэрэглэгч'};
 const HIST_ACTION={CREATE:'Бүртгэсэн',UPDATE:'Засварласан',DELETE:'Устгасан'};
-const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',quantity_sent_kg:'Илгээсэн жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',surname:'Овог',given_name:'Нэр',aimag:'Аймаг',last_vaccination_date:'Вакцины огноо',herd_size:'Мал толгой',certified:'MNS 6891 баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл',original_quantity_kg:'Анхны жин (кг)',unit:'Нэгж',estimated_age_years:'Нас (жил)',role:'Эрх'};
-const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsible_user','animal_id','product_id','herder_id','source_material_id','source_processing_id','transport_id','transport_item_id','lot_id','parent_lot_id','related_entity_id','related_entity_type','location_type','destination_location','_sync_state','user_id']);
+const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',weight_kg:'Жин (кг)',unit_weight_kg:'Нэгжийн жин (кг)',unit:'Нэгж',quantity_sent_kg:'Илгээсэн жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',packaging_date:'Савласан огноо',packaging_cost:'Савлагааны зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',surname:'Овог',given_name:'Нэр',aimag:'Аймаг',last_vaccination_date:'Вакцины огноо',herd_size:'Мал толгой',certified:'MNS 6891 баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл',original_quantity_kg:'Анхны жин (кг)',estimated_age_years:'Нас (жил)',role:'Эрх'};
+const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsible_user','animal_id','product_id','herder_id','source_material_id','source_processing_id','transport_id','transport_item_id','lot_id','parent_lot_id','related_entity_id','related_entity_type','location_type','destination_location','source_location','_sync_state','user_id']);
+// Raw columns already shown as a resolved, human-readable row by histLinked
+// (Малын код, Бүтээгдэхүүний код, Байршил). Hidden from the CREATE table to
+// avoid showing the same value twice; kept for UPDATE so an edit's
+// before/after is still visible.
+const HIST_LINKED_RAW={animals:['animal_code'],products:['product_code'],processing_events:['location']};
 // Fields that establish identity or lineage. Correcting a typo is fine;
 // silently repointing a product at a different animal is not -- that would
 // break the traceability the whole system exists to guarantee.
@@ -412,6 +417,21 @@ const HIST_EDITABLE={
  products:['product_type','packaging_date','note'],
  sales:['qty','unit_price','sale_date','customer','customer_phone']
 };
+// The record's own business date, shown as "Огноо" in the detail modal --
+// distinct from "Хэзээ" (the audit event's system timestamp) below it.
+const HIST_DATE_FIELD={animals:'purchase_date',processing_events:'processing_date',transports:'transport_date',receivings:'received_date',products:'packaging_date',sales:'sale_date'};
+// Fixed field order per section so the detail modal reads the same way every
+// time: identity/context first, money/weight in the middle, note always last.
+const HIST_DETAIL_ORDER={
+ herders:['surname','given_name','soum','aimag','herd_size','certified','last_vaccination_date','note'],
+ animals:['animal_type','estimated_age_years','live_weight_kg','price_per_kg','total_cost','certified','note'],
+ processing_events:['location','processing_cost','note'],
+ transports:['cost','note'],
+ transport_items:['quantity_sent_kg'],
+ receivings:['received_weight_kg','note'],
+ products:['product_type','weight_kg','unit','qty','unit_weight_kg','packaging_cost','note'],
+ sales:['qty','unit_price','total_amount','customer','customer_phone','note']
+};
 let HIST_PAGE=0; const HIST_PER=15;
 
 function histVal(k,v){
@@ -421,26 +441,107 @@ function histVal(k,v){
  if(typeof v==='number')return fmt(v);
  return String(v);
 }
+// One "Тээвэрлэлт эхлүүлэх" click writes a transports row plus one
+// transport_items row per material, so the raw feed shows 2+ audit rows for
+// what is really a single action. This folds each transport_items CREATE
+// into its parent transports CREATE row (as x._items) so the list, subject,
+// and CSV export all show one merged entry instead of a scattered pair.
+function buildHistoryFeed(){
+ const itemsByTransport={};
+ cache.audit_logs.forEach(x=>{
+   if(x.entity_type==='transport_items'&&x.action==='CREATE'){
+     const tid=x.new_data?.transport_id;
+     if(tid)(itemsByTransport[tid]=itemsByTransport[tid]||[]).push(x);
+   }
+ });
+ return cache.audit_logs
+   .filter(x=>!(x.entity_type==='transport_items'&&x.action==='CREATE'))
+   .map(x=>(x.entity_type==='transports'&&x.action==='CREATE'&&itemsByTransport[x.entity_id])?{...x,_items:itemsByTransport[x.entity_id]}:x);
+}
+function historyFeed(){return buildHistoryFeed().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))}
+// Subject shown in the list row, resolved per section so it's always the
+// name a person actually recognizes -- herder for a purchase, product code
+// for a sale -- instead of whichever raw field happened to exist.
 function histSubject(x){
  const d=x.new_data||x.old_data||{};
- return d.animal_code||d.product_code||d.full_name||d.animal_type||d.product_type||'';
+ switch(x.entity_type){
+   case 'herders': return d.full_name||'';
+   case 'animals': return cache.herders.find(h=>h.id===d.herder_id)?.full_name||d.animal_code||'';
+   case 'processing_events': return cache.animals.find(a=>a.id===d.animal_id)?.animal_code||'';
+   case 'transports': {
+     if(x._items&&x._items.length){
+       const codes=[...new Set(x._items.map(it=>cache.animals.find(a=>a.id===it.new_data?.animal_id)?.animal_code).filter(Boolean))];
+       if(codes.length) return codes.length>2?codes.slice(0,2).join(', ')+' +'+(codes.length-2):codes.join(', ');
+     }
+     return `${d.source_location||'—'} → ${d.destination_location||'SHOP'}`;
+   }
+   case 'transport_items': return cache.animals.find(a=>a.id===d.animal_id)?.animal_code||'';
+   case 'receivings': {
+     const ti=cache.transport_items.find(t=>t.id===d.transport_item_id);
+     return (ti&&cache.animals.find(a=>a.id===ti.animal_id)?.animal_code)||'';
+   }
+   case 'products': return d.product_code||'';
+   case 'sales': return cache.products.find(p=>p.id===d.product_id)?.product_code||'';
+   default: return d.animal_code||d.product_code||d.full_name||d.animal_type||d.product_type||'';
+ }
+}
+// Foreign-key fields (herder_id, animal_id, ...) are deliberately excluded
+// from the raw diff table -- a bare UUID tells nobody anything. This
+// resolves them into readable "Малчин: Дондов Батаа" style rows instead.
+function histLinked(x){
+ const d=x.new_data||x.old_data||{};
+ const rows=[];
+ if(x.entity_type==='animals'){
+   rows.push({label:'Малын код',value:d.animal_code||'—'});
+   rows.push({label:'Малчин',value:cache.herders.find(h=>h.id===d.herder_id)?.full_name||'—'});
+ } else if(x.entity_type==='processing_events'){
+   rows.push({label:'Мал',value:cache.animals.find(a=>a.id===d.animal_id)?.animal_code||'—'});
+   if(d.location)rows.push({label:'Байршил',value:d.location});
+ } else if(x.entity_type==='transports'){
+   rows.push({label:'Чиглэл',value:`${d.source_location||'—'} → ${d.destination_location||'SHOP'}`});
+   if(x._items&&x._items.length){
+     const list=x._items.map(it=>{
+       const a=cache.animals.find(a=>a.id===it.new_data?.animal_id);
+       return `${a?.animal_code||'—'} (${fmtKg(it.new_data?.quantity_sent_kg||0)} кг)`;
+     }).join(', ');
+     rows.push({label:'Тээвэрлэсэн',value:list});
+   }
+ } else if(x.entity_type==='transport_items'){
+   rows.push({label:'Мал',value:cache.animals.find(a=>a.id===d.animal_id)?.animal_code||'—'});
+ } else if(x.entity_type==='receivings'){
+   const ti=cache.transport_items.find(t=>t.id===d.transport_item_id);
+   rows.push({label:'Мал',value:(ti&&cache.animals.find(a=>a.id===ti.animal_id)?.animal_code)||'—'});
+ } else if(x.entity_type==='products'){
+   rows.push({label:'Бүтээгдэхүүний код',value:d.product_code||'—'});
+   rows.push({label:'Эх мал',value:cache.animals.find(a=>a.id===d.animal_id)?.animal_code||'—'});
+ } else if(x.entity_type==='sales'){
+   const p=cache.products.find(p=>p.id===d.product_id);
+   rows.push({label:'Бүтээгдэхүүн',value:p?p.product_code+(p.product_type?' · '+p.product_type:''):'—'});
+ }
+ return rows;
 }
 function histChanges(x){
  const nw=x.new_data||{},od=x.old_data||{};
- if(x.action==='UPDATE'){
-   return Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]&&JSON.stringify(od[k])!==JSON.stringify(nw[k]))
-     .map(k=>({k,label:HIST_FIELD[k],from:histVal(k,od[k]),to:histVal(k,nw[k])}));
- }
- return Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k])
-   .map(k=>({k,label:HIST_FIELD[k],to:histVal(k,nw[k])}));
+ const order=HIST_DETAIL_ORDER[x.entity_type]||[];
+ const dateField=HIST_DATE_FIELD[x.entity_type];
+ const linkedRaw=new Set(HIST_LINKED_RAW[x.entity_type]||[]);
+ // On CREATE, the business date and any linked-raw fields are already shown
+ // as headline rows, so repeating them here would just be noise. On UPDATE
+ // they stay -- seeing the before/after of a corrected value is exactly
+ // what an audit trail is for.
+ let keys=x.action==='UPDATE'
+   ?Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]&&JSON.stringify(od[k])!==JSON.stringify(nw[k]))
+   :Object.keys(nw).filter(k=>!HIST_SKIP.has(k)&&HIST_FIELD[k]&&k!==dateField&&!linkedRaw.has(k));
+ keys.sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);if(ia===-1&&ib===-1)return 0;if(ia===-1)return 1;if(ib===-1)return -1;return ia-ib});
+ return keys.map(k=>x.action==='UPDATE'?{k,label:HIST_FIELD[k],from:histVal(k,od[k]),to:histVal(k,nw[k])}:{k,label:HIST_FIELD[k],to:histVal(k,nw[k])});
 }
 function histBrief(x){
- const ch=histChanges(x).slice(0,3);
+ const ch=histChanges(x).filter(c=>c.k!=='note').slice(0,3);
  if(!ch.length)return '';
  return ch.map(c=>c.from!==undefined?`${c.label}: ${esc(c.from)}→${esc(c.to)}`:`${c.label}: ${esc(c.to)}`).join(' · ');
 }
 function renderHistory(){
- const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+ const logs=historyFeed();
  const pages=Math.max(1,Math.ceil(logs.length/HIST_PER));
  if(HIST_PAGE>=pages)HIST_PAGE=pages-1;
  const slice=logs.slice(HIST_PAGE*HIST_PER,(HIST_PAGE+1)*HIST_PER);
@@ -471,22 +572,40 @@ function renderHistory(){
  $('view').innerHTML=formCard(logs.length?tools+rows+nav:'<div class="empty"><div class="big">—</div>Түүх алга</div>');
 }
 function histPage(d){HIST_PAGE=Math.max(0,HIST_PAGE+d);renderHistory();window.scrollTo(0,0)}
+function metaRow(label,value){return `<div class="split" style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="muted">${esc(label)}</span><b style="text-align:right">${value}</b></div>`}
 function histOpen(idx){
- const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+ const logs=historyFeed();
  const x=logs[idx]; if(!x)return;
  const ent=HIST_ENTITY[x.entity_type]||x.entity_type;
  const act=HIST_ACTION[x.action]||x.action;
+ const d=x.new_data||x.old_data||{};
+ const dateField=HIST_DATE_FIELD[x.entity_type];
+ const bizDate=dateField&&d[dateField]?d[dateField]:null;
  const ch=histChanges(x);
+ const noteRow=ch.find(c=>c.k==='note');
+ const amountRows=ch.filter(c=>c.k!=='note');
  const canEdit=profile?.role==='superadmin'&&HIST_EDITABLE[x.entity_type];
- const body=ch.length?`<table><tr><th>Талбар</th>${x.action==='UPDATE'?'<th>Өмнө</th>':''}<th>${x.action==='UPDATE'?'Дараа':'Утга'}</th></tr>
-   ${ch.map(c=>`<tr><td>${esc(c.label)}</td>${x.action==='UPDATE'?`<td class="muted">${esc(c.from)}</td>`:''}<td><b>${esc(c.to)}</b></td></tr>`).join('')}</table>`
-   :'<div class="helper">Дэлгэрэнгүй мэдээлэл алга</div>';
+
+ // Fixed order every time: Огноо (business date) -> Хэн -> Үйлдэл -> Хэзээ
+ // (system timestamp) -> resolved identity fields (малчин/мал/бүтээгдэхүүн).
+ const meta=[
+   bizDate?metaRow('Огноо',esc(bizDate)):'',
+   metaRow('Хэн',esc(x.user_label||'—')),
+   metaRow('Үйлдэл',`${esc(act)} · ${esc(ent)}`),
+   metaRow('Хэзээ',esc(new Date(x.created_at).toLocaleString('mn-MN'))),
+   ...histLinked(x).map(r=>metaRow(r.label,esc(r.value)))
+ ].join('');
+
+ const amountsTable=amountRows.length?`<table style="margin-top:12px"><tr><th>Талбар</th>${x.action==='UPDATE'?'<th>Өмнө</th>':''}<th>${x.action==='UPDATE'?'Дараа':'Утга'}</th></tr>
+   ${amountRows.map(c=>`<tr><td>${esc(c.label)}</td>${x.action==='UPDATE'?`<td class="muted">${esc(c.from)}</td>`:''}<td><b>${esc(c.to)}</b></td></tr>`).join('')}</table>`:'';
+
  $('modal-root').innerHTML=`<div class="modal-back"><div class="modal">
    <div class="modal-head"><b>${esc(ent)} — ${esc(act)}</b><button class="x" onclick="histClose()">×</button></div>
-   <div class="helper" style="margin:6px 0 12px">${esc(x.user_label||'—')} · ${new Date(x.created_at).toLocaleString('mn-MN')}${histSubject(x)?' · '+esc(histSubject(x)):''}</div>
-   ${body}
-   ${x.reason?`<div class="helper" style="margin-top:10px">Шалтгаан: ${esc(x.reason)}</div>`:''}
-   ${canEdit?`<button class="btn-primary" onclick="histEdit('${x.entity_type}','${x.entity_id}')">Засварлах</button>`:''}
+   <div style="margin-top:8px">${meta}</div>
+   ${amountsTable}
+   ${noteRow?`<div class="helper" style="margin-top:12px"><b>Тайлбар:</b> ${esc(noteRow.to)}</div>`:''}
+   ${x.reason?`<div class="helper" style="margin-top:6px">Засварын шалтгаан: ${esc(x.reason)}</div>`:''}
+   ${canEdit?`<button class="btn-primary" style="margin-top:14px" onclick="histEdit('${x.entity_type}','${x.entity_id}')">Засварлах</button>`:''}
  </div></div>`;
 }
 function histClose(){$('modal-root').innerHTML=''}
@@ -551,7 +670,7 @@ function downloadCSV(filename,rows){
  toast('Татагдлаа');
 }
 function exportHistoryCSV(){
- const logs=cache.audit_logs.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+ const logs=historyFeed();
  downloadCSV(`tuuh-${today()}.csv`, logs.map(x=>({
    'Огноо':new Date(x.created_at).toLocaleString('mn-MN'),
    'Хэрэглэгч':x.user_label||'',
