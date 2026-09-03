@@ -20,12 +20,12 @@
 //    JSON was expected and the app crashed on parse. The HTML fallback is now
 //    restricted to navigation requests only.
 
-const CACHE = 'khongor-shimt-v10';
+const CACHE = 'khongor-shimt-v11';
 
 const LOCAL_ASSETS = [
   './', './index.html', './app.js', './styles.css', './config.js',
   './manifest.webmanifest', './public.html',
-  './icon-192.png', './icon-512.png', './logo-mark.png', './apple-touch-icon.png'
+  './icon-192.png', './icon-512.png', './logo-mark.png', './logo-hero.png', './apple-touch-icon.png'
 ];
 
 const CDN = [

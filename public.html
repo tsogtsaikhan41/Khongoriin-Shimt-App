@@ -8,7 +8,7 @@ const c=window.supabase;const cfg=window.APP_CONFIG||{};const code=new URLSearch
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
 // Static brand story -- same on every scan, doesn't depend on the product.
-const heroHtml=`<div style="text-align:center;padding:18px 0 4px"><img src="./logo-mark.png" alt="Хонгорын Шимт" style="width:180px;height:auto;display:block;margin:0 auto;border-radius:22px;box-shadow:0 2px 10px rgba(0,0,0,.15)"></div>`;
+const heroHtml=`<div style="text-align:center;padding:18px 0 4px"><img src="./logo-hero.png" alt="Хонгорын Шимт" style="width:200px;height:auto;display:block;margin:0 auto"></div>`;
 const storyHtml=`<div class="card">
   <h2 class="section-title" style="margin-bottom:2px">Эрхэм хэрэглэгч танд баярлалаа!</h2>
   <p class="helper" style="font-size:14px;color:var(--ink)">«Хонгорын Шимт» брэнд нь Баянхонгор аймгийн Баян-Цагаан, Богд, Бөмбөгөр, Жинст сумын 620 гаруй малчин өрхийг нэгтгэсэн 4 анхан шатны хоршооны хамтын брэнд юм.</p>
