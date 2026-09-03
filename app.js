@@ -173,7 +173,15 @@ function navigate(screen){
   if(['receiving','packaging','sales','dashboard','inventory','history','herders'].includes(screen)&&!isOnline()){toast('Энэ хэсэг интернэттэй үед ажиллана');return}
   const names={purchase:'Худалдан авалт',processing:'Мал төхөөрөх ажиллагаа',transport:'Тээвэрлэлт',receiving:'Хүлээн авалт',packaging:'Баглаа боодол',sales:'Борлуулалт',inventory:'Агуулах',dashboard:'Хянах самбар',history:'Үйл ажиллагааны түүх',herders:'Малчид'};
   $('main').innerHTML=`<div class="split"><div><h2 class="section-title">${names[screen]}</h2></div><button class="btn-secondary" onclick="renderHome()">← Нүүр</button></div><div id="view"></div>`;
-  ({purchase:renderPurchase,processing:renderProcessing,transport:renderTransport,receiving:renderReceiving,packaging:renderPackaging,sales:renderSales,inventory:renderInventory,dashboard:renderDashboard,history:renderHistory,herders:renderHerders})[screen]?.();
+  if(screen==='history'){
+    // Түүх is the one screen that actually needs audit_logs, so it's the
+    // one place that still fetches it -- on demand, not after every write
+    // elsewhere in the app. Render instantly from cache, then refresh.
+    renderHistory();
+    pullTable('audit_logs').then(renderHistory).catch(()=>{});
+    return;
+  }
+  ({purchase:renderPurchase,processing:renderProcessing,transport:renderTransport,receiving:renderReceiving,packaging:renderPackaging,sales:renderSales,inventory:renderInventory,dashboard:renderDashboard,herders:renderHerders})[screen]?.();
 }
 
 function sourceAnimalOptions(){return cache.animals.filter(a=>a._sync_state==='synced').sort((a,b)=>b.purchase_date?.localeCompare(a.purchase_date||'')||0)}
@@ -251,7 +259,7 @@ function renderProcessing(){
 async function createProcessing(fd){
  const aid=String(fd.get('animal_id')), a=cache.animals.find(x=>x.id===aid);if(!a)return toast('Амьтан сонгоно уу');if(a._sync_state!=='synced')return toast('Энэ амьтны худалдан авалт төв сервертэй синк болоогүй байна');
  const payload={processing:{id:uuid(),animal_id:aid,processing_date:String(fd.get('date')),location:String(fd.get('location')||''),responsible_user:session.user.id,processing_cost:num(fd.get('cost')),note:fd.get('note')||null},outputs:[{id:uuid(),animal_id:aid,material_type:'MEAT',quantity_kg:num(fd.get('meat_kg'))},{id:uuid(),animal_id:aid,material_type:'BYPRODUCT',quantity_kg:num(fd.get('byproduct_kg'))}]};
- if(isOnline()){try{await rpc('create_processing_bundle',{p_payload:payload});await pullData();toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+errMn(err));return}}
+ if(isOnline()){try{await rpc('create_processing_bundle',{p_payload:payload});await mergeFetch('animals','id',aid);await mergeFetch('processing_events','id',payload.processing.id);await mergeFetch('materials','source_processing_id',payload.processing.id);toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+errMn(err));return}}
  else {
    const proc={...payload.processing,_sync_state:'pending'}; await saveLocalRecord('processing_events',proc,'pending');
    cache.processing_events.push(proc);
@@ -284,7 +292,7 @@ function renderTransport(){
 async function createTransport(fd){
  const mid=String(fd.get('material_id')),m=cache.materials.find(x=>x.id===mid);const w=num(fd.get('weight'));if(!m||w<=0)return toast('Материал/жин буруу');if(w>num(m.current_available)+.0001)return toast('Үлдэгдлээс их байна');
  const payload={transport:{id:uuid(),transport_date:String(fd.get('date')),source_location:m.location_type,destination_location:'SHOP',responsible_user:session.user.id,cost:num(fd.get('cost')),note:fd.get('note')||null},items:[{id:uuid(),source_material_id:mid,animal_id:m.animal_id,quantity_sent_kg:w}]};
- if(isOnline()){try{await rpc('create_transport_bundle',{p_payload:payload});await pullData();toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+errMn(err));return}}else{await addOutbox('transport_create',payload);toast('Offline хадгалаглаа — дараа синк хийнэ')}
+ if(isOnline()){try{await rpc('create_transport_bundle',{p_payload:payload});await mergeFetch('transports','id',payload.transport.id);await mergeFetch('transport_items','transport_id',payload.transport.id);await mergeFetch('materials','id',mid);toast('Хадгалагдлаа')}catch(err){toast('Хадгалах алдаа: '+errMn(err));return}}else{await addOutbox('transport_create',payload);toast('Offline хадгалаглаа — дараа синк хийнэ')}
  renderTransport();
 }
 
@@ -298,7 +306,7 @@ function transportLabel(t){
 function renderReceiving(){
  const ts=cache.transports.filter(t=>t.destination_location==='SHOP'&&!t.is_received).sort((a,b)=>b.transport_date?.localeCompare(a.transport_date||'')||0);
  $('view').innerHTML=formCard(`<form id="receivingForm"><label>Тээвэр</label><select name="transport_id" required>${ts.map(t=>`<option value="${t.id}">${esc(transportLabel(t))}</option>`).join('')||'<option>Тээвэр алга</option>'}</select><label>Хүлээн авсан огноо</label><input type="date" name="date" value="${today()}" required><label>Хүлээн авсан жин (кг)</label><input type="number" name="weight" min="0" step="0.001" required><div class="calc-box"><span>Жингийн зөрүү (Дэлгүүрт хүлээн авах үеийн):</span><b id="recvDiff">—</b></div><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
- const f=$('receivingForm');function c(){const t=cache.transports.find(x=>x.id===f.transport_id.value);$('recvDiff').textContent=t?fmt(num(t.total_sent_kg)-num(f.weight.value))+' кг':'—'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const t=cache.transports.find(x=>x.id===f.transport_id.value);if(!t)return;try{await rpc('receive_transport',{p_transport_id:t.id,p_received_date:String(f.date.value),p_note:f.note.value||null,p_user_id:session.user.id,p_received_weight_kg:num(f.weight.value)});await pullData();toast('Хүлээн авалт хадгалагдлаа');renderReceiving()}catch(err){toast('Алдаа: '+errMn(err))}};c();
+ const f=$('receivingForm');function c(){const t=cache.transports.find(x=>x.id===f.transport_id.value);$('recvDiff').textContent=t?fmt(num(t.total_sent_kg)-num(f.weight.value))+' кг':'—'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const t=cache.transports.find(x=>x.id===f.transport_id.value);if(!t)return;try{const res=await rpc('receive_transport',{p_transport_id:t.id,p_received_date:String(f.date.value),p_note:f.note.value||null,p_user_id:session.user.id,p_received_weight_kg:num(f.weight.value)});await mergeFetch('receivings','id',res.receiving_id);await mergeFetch('materials','id',res.material_id);toast('Хүлээн авалт хадгалагдлаа');renderReceiving()}catch(err){toast('Алдаа: '+errMn(err))}};c();
 }
 
 function renderPackaging(){
@@ -330,7 +338,7 @@ async function createProduct(fd){
  const isKhorkhog=String(fd.get('product_type'))==='Хорхог багц';
  const unitW=isKhorkhog?($('khSize').value==='custom'?num($('khCustom').value):num($('khSize').value)):null;
  if(isKhorkhog&&(!unitW||num($('khQty').value)<1))return toast('Багцын жин ба тоог зөв бөглөнө үү');
- try{const productId=uuid();const srcAnimal=cache.animals.find(a=>a.id===m.animal_id);const productCode=`${srcAnimal?.animal_code||m.animal_id.slice(0,8)}-P${productId.slice(0,6).toUpperCase()}`;await rpc('create_product',{p_product_id:productId,p_product_code:productCode,p_material_id:mid,p_weight_kg:w,p_product_type:String(fd.get('product_type')),p_packaging_date:String(fd.get('date')),p_packaging_cost:num(fd.get('cost')),p_note:fd.get('note')||null,p_qty:isKhorkhog?num($('khQty').value):w,p_unit:isKhorkhog?'ширхэг':'кг',p_unit_weight_kg:isKhorkhog?unitW:null,p_user_id:session.user.id});await pullData();toast('Бүтээгдэхүүн хадгалагдлаа');renderPackaging()}catch(err){toast('Алдаа: '+errMn(err))}
+ try{const productId=uuid();const srcAnimal=cache.animals.find(a=>a.id===m.animal_id);const productCode=`${srcAnimal?.animal_code||m.animal_id.slice(0,8)}-P${productId.slice(0,6).toUpperCase()}`;await rpc('create_product',{p_product_id:productId,p_product_code:productCode,p_material_id:mid,p_weight_kg:w,p_product_type:String(fd.get('product_type')),p_packaging_date:String(fd.get('date')),p_packaging_cost:num(fd.get('cost')),p_note:fd.get('note')||null,p_qty:isKhorkhog?num($('khQty').value):w,p_unit:isKhorkhog?'ширхэг':'кг',p_unit_weight_kg:isKhorkhog?unitW:null,p_user_id:session.user.id});await mergeFetch('products','id',productId);await mergeFetch('materials','id',mid);toast('Бүтээгдэхүүн хадгалагдлаа');renderPackaging()}catch(err){toast('Алдаа: '+errMn(err))}
 }
 
 function renderSales(){
@@ -353,7 +361,7 @@ function renderSales(){
    $('saleWeightHint').textContent=(pack&&p.unit_weight_kg&&f.qty.value)?`Нийт жин: ${fmtKg(num(f.qty.value)*num(p.unit_weight_kg))} кг`:'';
    $('saleTotal').textContent=fmt(num(f.qty.value)*num(f.price.value),0)+' ₮';
  }
- f.oninput=c;f.onchange=c;c();f.onsubmit=async e=>{e.preventDefault();const p=cache.products.find(x=>x.id===f.product_id.value);if(!p)return;const q=num(f.qty.value);if(q>num(p.current_available)+.0001)return toast('Үлдэгдлээс их байна');try{await rpc('create_sale',{p_sale_id:uuid(),p_product_id:p.id,p_qty:q,p_unit_price:num(f.price.value),p_sale_date:String(f.date.value),p_customer:String(f.customer.value||''),p_customer_phone:String(f.customer_phone.value||''),p_user_id:session.user.id});await pullData();toast('Борлуулалт хадгалагдлаа');renderSales()}catch(err){toast('Алдаа: '+errMn(err))}};c();
+ f.oninput=c;f.onchange=c;c();f.onsubmit=async e=>{e.preventDefault();const p=cache.products.find(x=>x.id===f.product_id.value);if(!p)return;const q=num(f.qty.value);if(q>num(p.current_available)+.0001)return toast('Үлдэгдлээс их байна');const saleId=uuid();try{await rpc('create_sale',{p_sale_id:saleId,p_product_id:p.id,p_qty:q,p_unit_price:num(f.price.value),p_sale_date:String(f.date.value),p_customer:String(f.customer.value||''),p_customer_phone:String(f.customer_phone.value||''),p_user_id:session.user.id});await mergeFetch('sales','id',saleId);await mergeFetch('products','id',p.id);toast('Борлуулалт хадгалагдлаа');renderSales()}catch(err){toast('Алдаа: '+errMn(err))}};c();
 }
 
 // Агуулах is now 4 dedicated pages behind tab buttons instead of one long
@@ -1064,6 +1072,25 @@ window.histOpen=histOpen;window.histClose=histClose;window.histPage=histPage;win
 window.invTab=invTab;
 
 async function upsertDirect(table,row){const r=await supa().from(table).upsert(row,{onConflict:'id'}).select().single();if(r.error)throw r.error;await saveLocalRecord(table,r.data,'synced');return r.data}
+// Targeted refresh: fetch only the specific row(s) a write just touched (by
+// id, via the same views pullTable uses) and merge them into cache/IndexedDB,
+// instead of pullData()'s full select('*') on every table. This is what
+// keeps monthly bandwidth flat as history grows, rather than climbing every
+// week -- see the dashboard/history work: a full pull after every single
+// write was re-downloading the entire, ever-growing audit trail each time.
+async function mergeFetch(table,filterCol,filterVal){
+ const remote=REMOTE_VIEWS[table]||table;
+ const q=supa().from(remote).select('*');
+ const r=Array.isArray(filterVal)?await q.in(filterCol,filterVal):await q.eq(filterCol,filterVal);
+ if(r.error)throw r.error;
+ const rows=r.data||[];
+ for(const row of rows){
+   cache[table]=cache[table].filter(x=>x.id!==row.id);
+   cache[table].push(row);
+   await saveLocalRecord(table,row,'synced');
+ }
+ return rows;
+}
 function errMn(err){
  const raw=(err&&err.message)||String(err||'');
  const m={
