@@ -178,8 +178,12 @@ function formCard(inner){return `<div class="card">${inner}</div>`}
 function renderPurchase(){
  $('view').innerHTML=formCard(`<form id="purchaseForm">
  <label>Огноо</label><input type="date" name="date" value="${today()}" required>
- <label>Малчны нэр</label><input name="herderName" required placeholder="Жишээ: Батбаяр">
+ <label>Аймаг</label><input name="aimag" value="Баянхонгор" readonly>
  <label>Сум</label>${(profile?.role!=='superadmin'&&profile?.soum)?`<input name="soum" value="${esc(profile.soum)}" readonly>`:`<select name="soum" required><option value="" ${settings.soum?'':'selected'}>-- сум сонгох --</option>${SOUMS.map(s=>`<option ${settings.soum===s.name?'selected':''}>${s.name}</option>`).join('')}</select>`}
+ <div class="row2"><div><label>Малчны овог</label><input name="herderSurname" required placeholder="Жишээ: Дондов"></div><div><label>Малчны нэр</label><input name="herderGiven" required placeholder="Жишээ: Батэрдэнэ"></div></div>
+ <label>Хариуцлагатай Нүүдэлчин стандартаар баталгаажсан эсэх (MNS 6891)</label>
+ <select name="certified"><option value="false">Үгүй</option><option value="true">Тийм</option></select>
+ <label>Мал сүргийн вакцинд хамрагдсан огноо (заавал биш)</label><input type="date" name="vaccinationDate">
  <label>Мал төрөл</label><select name="animalType" required><option value="">-- сонгох --</option><option>Ямаа</option><option>Хонь</option><option>Үхэр</option><option>Адуу</option><option>Тэмээ</option></select>
  <div class="row2"><div><label>Амьд жин (кг)</label><input type="number" name="liveWeight" min="0.1" step="0.1" required></div><div><label>Үнэ / кг (₮)</label><input type="number" name="pricePerKg" min="0" step="1" required></div></div>
  <div class="calc-box"><span>Нийт үнэ:</span><b id="purchaseTotal">0 ₮</b></div>
@@ -188,8 +192,14 @@ function renderPurchase(){
  f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f);await createPurchase(fd)};renderPurchaseList();
 }
 async function createPurchase(fd){
- const herderName=String(fd.get('herderName')).trim(), soum=String(fd.get('soum')), animalType=String(fd.get('animalType'));
- const herder={id:uuid(),full_name:herderName,soum,location_detail:null,herd_size:null,last_vaccination_date:null,certified:false,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+ const surname=String(fd.get('herderSurname')||'').trim();
+ const givenName=String(fd.get('herderGiven')||'').trim();
+ const herderName=[surname,givenName].filter(Boolean).join(' ');
+ const soum=String(fd.get('soum')), animalType=String(fd.get('animalType'));
+ const certified=String(fd.get('certified'))==='true';
+ const vaccinationDate=String(fd.get('vaccinationDate')||'')||null;
+ const aimag=String(fd.get('aimag')||'Баянхонгор');
+ const herder={id:uuid(),full_name:herderName,surname,given_name:givenName,aimag,soum,location_detail:null,herd_size:null,last_vaccination_date:vaccinationDate,certified,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
  // Reuse existing local/central herder by exact name+soum when possible.
  let existing=cache.herders.find(h=>h.full_name===herderName&&h.soum===soum);
  if(!existing){
@@ -200,6 +210,20 @@ async function createPurchase(fd){
  } else if(existing._sync_state!=='synced'){
    if(isOnline()){try{await upsertDirect('herders',existing)}catch(err){return toast('Малчны мэдээллийг эхлээд синк хийнэ үү')}}
    else return toast('Энэ малчны мэдээлэл синк хийгдээгүй байна');
+ } else {
+   // Known herder: certification status and vaccination date can legitimately
+   // change between purchases, so refresh them rather than silently keeping
+   // whatever was recorded the first time this herder was entered.
+   const changed = existing.certified!==certified ||
+     (vaccinationDate && existing.last_vaccination_date!==vaccinationDate);
+   if(changed && isOnline()){
+     const upd={...existing,certified,last_vaccination_date:vaccinationDate||existing.last_vaccination_date,updated_at:new Date().toISOString()};
+     try{
+       const saved=await upsertDirect('herders',upd);
+       cache.herders=cache.herders.filter(h=>h.id!==saved.id).concat({...saved,_sync_state:'synced'});
+       existing=saved;
+     }catch(err){ /* keep the purchase moving; herder detail can be corrected later */ }
+   }
  }
  const live=num(fd.get('liveWeight')), price=num(fd.get('pricePerKg'));
  const animal={id:uuid(),animal_code:`${(SOUMS.find(s=>s.name===soum)?.code||'GEN')}-${new Date(fd.get('date')+'T00:00:00').toISOString().slice(2,10).replace(/-/g,'')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`,herder_id:existing.id,soum,purchase_date:String(fd.get('date')),animal_type:animalType,estimated_age_years:null,live_weight_kg:live,price_per_kg:price,total_cost:live*price,status:'PURCHASED',note:fd.get('note')||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
@@ -278,7 +302,7 @@ function renderDashboard(){
 }
 const HIST_ENTITY={sales:'Борлуулалт',animals:'Худалдан авалт',herders:'Малчин',processing_events:'Нядалга',transports:'Тээвэрлэлт',transport_items:'Тээвэрлэлт',receivings:'Хүлээн авалт',products:'Баглаа боодол',material_lots:'Материал',profiles:'Хэрэглэгч'};
 const HIST_ACTION={CREATE:'Бүртгэсэн',UPDATE:'Засварласан',DELETE:'Устгасан'};
-const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',quantity_sent_kg:'Илгээсэн жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',herd_size:'Мал толгой',certified:'Баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл',original_quantity_kg:'Анхны жин (кг)',unit:'Нэгж',estimated_age_years:'Нас (жил)',role:'Эрх'};
+const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',quantity_sent_kg:'Илгээсэн жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',surname:'Овог',given_name:'Нэр',aimag:'Аймаг',last_vaccination_date:'Вакцины огноо',herd_size:'Мал толгой',certified:'MNS 6891 баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл',original_quantity_kg:'Анхны жин (кг)',unit:'Нэгж',estimated_age_years:'Нас (жил)',role:'Эрх'};
 const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsible_user','animal_id','product_id','herder_id','source_material_id','source_processing_id','transport_id','transport_item_id','lot_id','parent_lot_id','related_entity_id','related_entity_type','location_type','destination_location','_sync_state','user_id']);
 // Fields that establish identity or lineage. Correcting a typo is fine;
 // silently repointing a product at a different animal is not -- that would
@@ -286,7 +310,7 @@ const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsibl
 const HIST_LOCKED=new Set(['animal_code','product_code','soum','status','total_amount','total_cost']);
 const HIST_EDITABLE={
  animals:['live_weight_kg','price_per_kg','animal_type','estimated_age_years','purchase_date','note'],
- herders:['full_name','herd_size','certified','note'],
+ herders:['surname','given_name','herd_size','certified','last_vaccination_date'],
  processing_events:['processing_date','processing_cost','location','note'],
  transports:['transport_date','cost','note'],
  receivings:['received_date','received_weight_kg','note'],
