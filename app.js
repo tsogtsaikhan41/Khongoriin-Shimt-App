@@ -473,6 +473,7 @@ function canvasCard(title,id,h){return `<div class="card"><b>${esc(title)}</b><d
 function renderDashboard(){
  const tabs=DASH_TABS.map(t=>`<button class="btn-secondary" style="flex:1;min-width:0;padding:9px 4px;font-size:12px;${DASH_TAB===t.id?'background:var(--primary);color:#fff;border-color:var(--primary)':''}" onclick="dashTab('${t.id}')">${t.label}</button>`).join('');
  const customInputs=DASH_RANGE==='custom'?`<input type="date" value="${DASH_FROM||''}" onchange="dashCustom(this.value,null)" style="max-width:145px"><input type="date" value="${DASH_TO||''}" onchange="dashCustom(null,this.value)" style="max-width:145px">`:'';
+ const exportBtn=profile?.role==='superadmin'?`<button class="btn-secondary" onclick="exportFinanceXLSX()" style="white-space:nowrap">⬇ Санхүүгийн тайлан</button>`:'';
  $('view').innerHTML=`<div class="actions" style="margin-bottom:10px;gap:6px;flex-wrap:nowrap">${tabs}</div>
   <div class="split" style="margin-bottom:14px;gap:8px;flex-wrap:wrap">
    <select onchange="dashRange(this.value)" style="max-width:150px">
@@ -481,6 +482,7 @@ function renderDashboard(){
     <option value="custom" ${DASH_RANGE==='custom'?'selected':''}>Огноо сонгох</option>
    </select>${customInputs}
   </div>
+  ${exportBtn?`<div class="split" style="margin-bottom:14px">${exportBtn}</div>`:''}
   <div id="dashBody"></div>`;
  renderDashBody();
 }
@@ -597,6 +599,78 @@ function renderDashSales(el){
  dashChart('dashSalesTrend',{type:'line',data:{labels:keys.map(k=>dashBucketLabel(k,unit)),datasets:[{label:'Орлого',data:revByBucket,borderColor:DASH_COLORS.accent,backgroundColor:DASH_COLORS.accent,tension:.3}]}});
  dashChart('dashSalesType',{type:'bar',data:{labels:types,datasets:[{label:'Орлого',data:types.map(t=>byType[t]),backgroundColor:DASH_COLORS.primary}]}});
 }
+// Superadmin-only finance export. Reuses the same dashInRange() filter as
+// the dashboard charts, so it always matches whatever period is on screen.
+// The last sheet (Нэгдсэн) is the one-row-per-animal traceability ledger --
+// herder to sale, with every attributable cost and the resulting margin.
+function exportFinanceXLSX(){
+ if(!window.XLSX)return toast('Excel сан ачаалагдаагүй байна. Дахин оролдоно уу.');
+ const sheet=rows=>XLSX.utils.json_to_sheet(rows.length?rows:[{'Мэдээлэл':'Байхгүй'}]);
+
+ const animals=cache.animals.filter(a=>dashInRange(a.purchase_date));
+ const purchaseRows=animals.map(a=>({
+   'Код':a.animal_code,'Малчин':cache.herders.find(h=>h.id===a.herder_id)?.full_name||'—','Сум':a.soum,
+   'Төрөл':a.animal_type,'Нас':a.estimated_age_years||'','Амьд жин (кг)':num(a.live_weight_kg),
+   'Үнэ/кг':num(a.price_per_kg),'Нийт үнэ':num(a.total_cost),'Огноо':a.purchase_date
+ }));
+
+ const transports=cache.transports.filter(t=>dashInRange(t.transport_date));
+ const transportRows=transports.map(t=>{
+   const items=cache.transport_items.filter(i=>i.transport_id===t.id);
+   const sent=items.reduce((s,i)=>s+num(i.quantity_sent_kg),0);
+   let recv=0;
+   items.forEach(i=>{const r=cache.receivings.find(rv=>rv.transport_item_id===i.id);if(r)recv+=num(r.received_weight_kg)});
+   const loss=Number((sent-recv).toFixed(3));
+   return {'Чиглэл':`${t.source_location||'—'} → ${t.destination_location||'SHOP'}`,'Илгээсэн (кг)':sent,'Хүлээн авсан (кг)':recv,'Алдагдсан (кг)':loss,'Алдагдлын %':sent>0?Number((loss/sent*100).toFixed(2)):0,'Зардал':num(t.cost),'Огноо':t.transport_date};
+ });
+
+ const products=cache.products.filter(p=>dashInRange(p.packaging_date));
+ const productRows=products.map(p=>({
+   'Код':p.product_code,'Төрөл':p.product_type,'Жин (кг)':num(p.weight_kg),'Нэгж':p.unit,
+   'Тоо':num(p.qty),'Савлагааны зардал':num(p.packaging_cost),'Огноо':p.packaging_date
+ }));
+
+ const sales=cache.sales.filter(s=>dashInRange(s.sale_date));
+ const saleRows=sales.map(s=>{
+   const p=cache.products.find(x=>x.id===s.product_id);
+   return {'Бүтээгдэхүүн':p?.product_code||'—','Төрөл':p?.product_type||'—','Тоо хэмжээ':num(s.qty),'Нэгж үнэ':num(s.unit_price),'Нийт дүн':num(s.total_amount),'Харилцагч':s.customer||'—','Огноо':s.sale_date};
+ });
+
+ const ledgerRows=animals.map(a=>{
+   const herder=cache.herders.find(h=>h.id===a.herder_id);
+   const proc=cache.processing_events.find(p=>p.animal_id===a.id);
+   const materials=cache.materials.filter(m=>m.animal_id===a.id);
+   const meatKg=materials.filter(m=>m.material_type==='MEAT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);
+   const bypKg=materials.filter(m=>m.material_type==='BYPRODUCT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);
+   const transportIds=[...new Set(cache.transport_items.filter(ti=>ti.animal_id===a.id).map(ti=>ti.transport_id))];
+   const transportCost=transportIds.reduce((s,tid)=>s+num(cache.transports.find(x=>x.id===tid)?.cost),0);
+   const aProducts=cache.products.filter(p=>p.animal_id===a.id);
+   const packagingCost=aProducts.reduce((s,p)=>s+num(p.packaging_cost),0);
+   const productIds=new Set(aProducts.map(p=>p.id));
+   const aSales=cache.sales.filter(s=>productIds.has(s.product_id));
+   const revenue=aSales.reduce((s,x)=>s+num(x.total_amount),0);
+   const soldQty=aSales.reduce((s,x)=>s+num(x.qty),0);
+   const totalCost=num(a.total_cost)+num(proc?.processing_cost)+transportCost+packagingCost;
+   return {
+     'Малын код':a.animal_code,'Малчин':herder?.full_name||'—','Сум':a.soum,'Төрөл':a.animal_type,
+     'Худалдан авалтын үнэ':num(a.total_cost),'Нядалгын зардал':num(proc?.processing_cost),
+     'Тээврийн зардал':transportCost,'Савлагааны зардал':packagingCost,'Нийт зардал':totalCost,
+     'Гарсан мах (кг)':meatKg,'Гарсан дайвар (кг)':bypKg,
+     'Бүтээгдэхүүний тоо':aProducts.length,'Зарагдсан тоо хэмжээ':soldQty,
+     'Орлого':revenue,'Ашиг':revenue-totalCost,'Худалдан авсан огноо':a.purchase_date
+   };
+ });
+
+ const wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,sheet(purchaseRows),'Худалдан авалт');
+ XLSX.utils.book_append_sheet(wb,sheet(transportRows),'Тээвэрлэлт');
+ XLSX.utils.book_append_sheet(wb,sheet(productRows),'Бүтээгдэхүүн');
+ XLSX.utils.book_append_sheet(wb,sheet(saleRows),'Борлуулалт');
+ XLSX.utils.book_append_sheet(wb,sheet(ledgerRows),'Нэгдсэн');
+ XLSX.writeFile(wb,`sankhuu-${today()}.xlsx`);
+ toast('Татагдлаа');
+}
+window.exportFinanceXLSX=exportFinanceXLSX;
 window.dashTab=dashTab;window.dashRange=dashRange;window.dashCustom=dashCustom;
 
 // ---- Малчид: list (all admins), add (all admins), edit (superadmin),
