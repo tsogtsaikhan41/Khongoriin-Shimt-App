@@ -608,6 +608,7 @@ async function deleteRecord(table,id,label){
 window.deleteRecord=deleteRecord;
 
 window.histOpen=histOpen;window.histClose=histClose;window.histPage=histPage;window.histEdit=histEdit;
+window.invTab=invTab;
 
 async function upsertDirect(table,row){const r=await supa().from(table).upsert(row,{onConflict:'id'}).select().single();if(r.error)throw r.error;await saveLocalRecord(table,r.data,'synced');return r.data}
 function errMn(err){
