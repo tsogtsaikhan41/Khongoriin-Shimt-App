@@ -126,19 +126,37 @@ function shell(){
   updateNet();window.addEventListener('online',()=>{updateNet();syncNow().then(refreshAll)});window.addEventListener('offline',updateNet);
 }
 function updateNet(){const d=$('netDot');if(!d)return;d.className='status-dot '+(isOnline()?'status-online':'status-offline');d.title=isOnline()?'Интернэттэй':'Интернэтгүй'}
+
+// --- Brand line icons (inline SVG: consistent on every device, unlike emoji) ---
+function ic(name){
+ const P='stroke="currentColor" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+ const paths={
+  dashboard:`<path ${P} d="M3 13h5v8H3zM10 3h5v18h-5zM17 9h5v12h-5z"/>`,
+  purchase:`<path ${P} d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/><circle cx="10" cy="20" r="1.3" ${P}/><circle cx="17" cy="20" r="1.3" ${P}/>`,
+  processing:`<path ${P} d="M14 3l7 7-4 4-7-7zM10.5 10.5L3 18v3h3l7.5-7.5"/>`,
+  transport:`<path ${P} d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.6" ${P}/><circle cx="17.5" cy="18" r="1.6" ${P}/>`,
+  receiving:`<path ${P} d="M12 3v10m0 0l-3.5-3.5M12 13l3.5-3.5"/><path ${P} d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>`,
+  packaging:`<path ${P} d="M3 8l9-4 9 4-9 4z"/><path ${P} d="M3 8v8l9 4 9-4V8"/><path ${P} d="M12 12v8"/>`,
+  sales:`<circle cx="12" cy="12" r="8.5" ${P}/><path ${P} d="M12 7v10M14.5 9.5c0-1-1.1-1.6-2.5-1.6s-2.5.6-2.5 1.7c0 2.4 5 1.4 5 3.8 0 1.1-1.1 1.7-2.5 1.7s-2.5-.6-2.5-1.6"/>`,
+  inventory:`<path ${P} d="M3 7h18v13H3zM3 7l2-3h14l2 3M9 12h6"/>`,
+  history:`<path ${P} d="M5 5h11l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path ${P} d="M8 11h8M8 15h5"/>`
+ };
+ return `<svg class="ico" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">${paths[name]||''}</svg>`;
+}
+
 function renderHome(){
  const soum=settings.soum||'Сум сонгоогүй';
- $('main').innerHTML=`<div class="syncbar"><span class="status-dot ${isOnline()?'status-online':'status-offline'}"></span><span>${isOnline()?'Интернэттэй':'Интернэтгүй'} · ${settings.lastSync?'Сүүлд синк: '+new Date(settings.lastSync).toLocaleString('mn-MN'):'Одоогоор синк хийгдээгүй'}</span><span style="margin-left:auto"><button class="btn-ghost" onclick="syncNow().then(refreshAll)"><span class="ic">🔄</span> Синк</button></span></div>
+ $('main').innerHTML=`<div class="syncbar"><span class="status-dot ${isOnline()?'status-online':'status-offline'}"></span><span>${isOnline()?'Интернэттэй':'Интернэтгүй'} · ${settings.lastSync?'Сүүлд синк: '+new Date(settings.lastSync).toLocaleString('mn-MN'):'Одоогоор синк хийгдээгүй'}</span><span style="margin-left:auto"><button class="btn-ghost" onclick="syncNow().then(refreshAll)"><span class="ic">↻</span> Синк</button></span></div>
  <div class="grid">
- <div class="tile wide dashboard" onclick="navigate('dashboard')"><div><div class="label">📊 Хянах самбар</div><div class="sub">Зардал, борлуулалт, гарц</div></div><div style="font-size:26px">›</div></div>
- <div class="tile" onclick="navigate('purchase')"><div class="icon">🛒</div><div class="label">Худалдан авалт</div><div class="sub">Малчнаас мал авах</div></div>
- <div class="tile" onclick="navigate('processing')"><div class="icon">🔪</div><div class="label">Нядалга</div><div class="sub">Мал бэлтгэх</div></div>
- <div class="tile" onclick="navigate('transport')"><div class="icon">🚚</div><div class="label">Тээвэрлэлт</div><div class="sub">Дэлгүүр рүү илгээх</div></div>
- <div class="tile" onclick="navigate('receiving')"><div class="icon">📥</div><div class="label">Хүлээн авалт</div><div class="sub">Дэлгүүрт хүлээн авах</div></div>
- <div class="tile" onclick="navigate('packaging')"><div class="icon">📦</div><div class="label">Баглаа боодол</div><div class="sub">Мах бэлдэх, савлах</div></div>
- <div class="tile" onclick="navigate('sales')"><div class="icon">💰</div><div class="label">Борлуулалт</div><div class="sub">Хэрэглэгчид зарах</div></div>
- <div class="tile" onclick="navigate('inventory')"><div class="icon">🗃️</div><div class="label">Агуулах</div><div class="sub">Одоогийн нөөц</div></div>
- <div class="tile" onclick="navigate('history')"><div class="icon">🧾</div><div class="label">Түүх</div><div class="sub">Хэн, хэзээ өөрчилсөн</div></div>
+ <div class="tile wide dashboard" onclick="navigate('dashboard')"><div style="display:flex;align-items:center;gap:12px"><span class="icon" style="color:#fff">${ic('dashboard')}</span><div><div class="label">Хянах самбар</div><div class="sub">Зардал, борлуулалт, гарц</div></div></div><div style="font-size:26px">›</div></div>
+ <div class="tile" onclick="navigate('purchase')"><div class="icon">${ic('purchase')}</div><div class="label">Худалдан авалт</div><div class="sub">Малчнаас мал авах</div></div>
+ <div class="tile" onclick="navigate('processing')"><div class="icon">${ic('processing')}</div><div class="label">Нядалга</div><div class="sub">Мал бэлтгэх</div></div>
+ <div class="tile" onclick="navigate('transport')"><div class="icon">${ic('transport')}</div><div class="label">Тээвэрлэлт</div><div class="sub">Дэлгүүр рүү илгээх</div></div>
+ <div class="tile" onclick="navigate('receiving')"><div class="icon">${ic('receiving')}</div><div class="label">Хүлээн авалт</div><div class="sub">Дэлгүүрт хүлээн авах</div></div>
+ <div class="tile" onclick="navigate('packaging')"><div class="icon">${ic('packaging')}</div><div class="label">Баглаа боодол</div><div class="sub">Мах бэлдэх, савлах</div></div>
+ <div class="tile" onclick="navigate('sales')"><div class="icon">${ic('sales')}</div><div class="label">Борлуулалт</div><div class="sub">Хэрэглэгчид зарах</div></div>
+ <div class="tile" onclick="navigate('inventory')"><div class="icon">${ic('inventory')}</div><div class="label">Агуулах</div><div class="sub">Одоогийн нөөц</div></div>
+ <div class="tile" onclick="navigate('history')"><div class="icon">${ic('history')}</div><div class="label">Түүх</div><div class="sub">Хэн, хэзээ өөрчилсөн</div></div>
  </div><div class="card" style="margin-top:14px"><b>Одоогийн байрлал:</b> ${esc(soum)}<div class="helper">Сум дээр худалдан авалт, нядалга, тээвэрлэлтийг offline хийж болно.</div></div>`;
 }
 function navigate(screen){
@@ -331,7 +349,7 @@ function renderHistory(){
    <span class="helper">${HIST_PAGE+1} / ${pages} · нийт ${logs.length}</span>
    <button class="btn-ghost" ${HIST_PAGE>=pages-1?'disabled':''} onclick="histPage(1)">Дараах →</button>
  </div>`;
- $('view').innerHTML=formCard(logs.length?tools+rows+nav:'<div class="empty"><div class="big">🧾</div>Түүх алга</div>');
+ $('view').innerHTML=formCard(logs.length?tools+rows+nav:'<div class="empty"><div class="big">—</div>Түүх алга</div>');
 }
 function histPage(d){HIST_PAGE=Math.max(0,HIST_PAGE+d);renderHistory();window.scrollTo(0,0)}
 function histOpen(idx){

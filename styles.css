@@ -14,3 +14,10 @@ h2.section-title{font-size:18px;margin:4px 0 14px;color:var(--primary-dark)}.car
 .syncbar .btn-ghost .ic{color:var(--accent)}
 .btn-primary:active{background:var(--primary-dark)}
 .badge.neutral{background:var(--accent-soft);color:#8A4A19}
+
+/* --- tile icons: single consistent line style, brand green --- */
+.tile .icon{color:var(--primary);display:flex;align-items:center;justify-content:center;
+  width:44px;height:44px;border-radius:12px;background:var(--good-soft);margin-bottom:2px}
+.tile.dashboard .icon{background:rgba(255,255,255,.16);color:#fff}
+.ico{display:block}
+.syncbar .btn-ghost .ic{font-size:15px;font-weight:700}
