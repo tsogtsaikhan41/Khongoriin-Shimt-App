@@ -429,7 +429,7 @@ function herderMonths(hid){
  return [...new Set(herderAnimals(hid).map(a=>(a.purchase_date||'').slice(0,7)).filter(Boolean))].sort().reverse();
 }
 function renderHerders(){
- $('view').innerHTML=formCard(`<div class="split" style="margin-bottom:12px;gap:8px"><input id="herderSearch" placeholder="Нэр, сум хайх..." value="${esc(HERD_FILTER)}"><button class="btn-secondary" onclick="herderAddOpen()" style="white-space:nowrap">+ Нэмэх</button></div><div class="split" style="margin-bottom:12px"><span class="helper">Жагсаалтыг Excel-д татах</span><button class="btn-secondary" onclick="exportHerdersCSV()">⬇ Excel</button></div><div id="herderList"></div>`);
+ $('view').innerHTML=formCard(`<div class="split" style="margin-bottom:12px;gap:8px"><input id="herderSearch" placeholder="Нэр, сум хайх..." value="${esc(HERD_FILTER)}"><button class="btn-secondary" onclick="herderAddOpen()" style="white-space:nowrap">+ Нэмэх</button></div><div class="split" style="margin-bottom:12px"><span class="helper">Жагсаалтыг Excel-д татах</span><button class="btn-secondary" onclick="exportHerdersXLSX()">⬇ Excel</button></div><div id="herderList"></div>`);
  $('herderSearch').oninput=e=>{HERD_FILTER=e.target.value;renderHerderList()};
  renderHerderList();
 }
@@ -530,14 +530,14 @@ function herderEditOpen(id){
    }catch(err){toast('Алдаа: '+errMn(err))}
  };
 }
-function exportHerdersCSV(){
+function exportHerdersXLSX(){
  const rows=cache.herders.slice().sort((a,b)=>a.full_name.localeCompare(b.full_name,'mn')).map(h=>{
    const c=herderContribution(h.id,null);
    return {'Нэр':h.full_name,'Сум':h.soum,'Мал (тоо)':c.animalsCount,'Амьд жин (кг)':fmtKg(c.liveWeight),'Худалдан авалтын үнэ':c.purchaseCost,'Гарсан мах (кг)':fmtKg(c.meatKg),'Баглагдсан бүтээгдэхүүн':c.productsCount,'Зарагдсан тоо хэмжээ':c.soldQty,'Борлуулалтын орлого':c.revenue};
  });
- downloadCSV(`malchid-${today()}.csv`,rows);
+ downloadXLSX(`malchid-${today()}.xlsx`,rows);
 }
-window.herderAddOpen=herderAddOpen;window.herderOpen=herderOpen;window.herderEditOpen=herderEditOpen;window.herderDetailMonth=herderDetailMonth;window.exportHerdersCSV=exportHerdersCSV;
+window.herderAddOpen=herderAddOpen;window.herderOpen=herderOpen;window.herderEditOpen=herderEditOpen;window.herderDetailMonth=herderDetailMonth;window.exportHerdersXLSX=exportHerdersXLSX;
 
 const HIST_ENTITY={sales:'Борлуулалт',animals:'Худалдан авалт',herders:'Малчин',processing_events:'Мал төхөөрөх ажиллагаа',transports:'Тээвэрлэлт',transport_items:'Тээвэрлэлт',receivings:'Хүлээн авалт',products:'Баглаа боодол',material_lots:'Материал',profiles:'Хэрэглэгч'};
 const HIST_ACTION={CREATE:'Бүртгэсэн',UPDATE:'Засварласан',DELETE:'Устгасан'};
@@ -707,7 +707,7 @@ function renderHistory(){
      ${histBrief(x)?`<div class="helper">${histBrief(x)}</div>`:''}
    </div>`;
  }).join('');
- const tools=`<div class="split" style="margin-bottom:12px"><span class="helper">Түүхийг Excel-д татах</span><button class="btn-secondary" onclick="exportHistoryCSV()">⬇ Excel (CSV)</button></div>`;
+ const tools=`<div class="split" style="margin-bottom:12px"><span class="helper">Түүхийг Excel-д татах</span><button class="btn-secondary" onclick="exportHistoryXLSX()">⬇ Excel</button></div>`;
  const nav=`<div class="split" style="margin-top:10px">
    <button class="btn-ghost" ${HIST_PAGE===0?'disabled':''} onclick="histPage(-1)">← Өмнөх</button>
    <span class="helper">${HIST_PAGE+1} / ${pages} · нийт ${logs.length}</span>
@@ -795,31 +795,25 @@ function histEdit(table,id){
  };
 }
 
-// ---- CSV export (opens directly in Excel; no external library needed) ----
-function csvCell(v){
- if(v===null||v===undefined)return '';
- const t=String(v);
- return /[",\n;]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
-}
-function downloadCSV(filename,rows){
+// ---- Excel export (real .xlsx via SheetJS, loaded from CDN in index.html)
+// CSV turned out to be a dead end here: the separator character and the
+// text encoding are both interpreted differently depending on the
+// computer's regional settings, which is exactly what produced the merged
+// columns and the Cyrillic mojibake. A real .xlsx file stores both the
+// column structure and the text as proper Unicode, so there's nothing left
+// for Excel to guess.
+function downloadXLSX(filename,rows){
  if(!rows.length)return toast('Татах мэдээлэл алга');
- const cols=Object.keys(rows[0]);
- // "sep=;" as the very first line tells Excel explicitly which delimiter to
- // use, regardless of the computer's regional list-separator setting --
- // without it, a machine set to "," instead of ";" dumps every column into
- // one cell, which is exactly the "merged headers" you were seeing.
- const body=['sep=;',cols.join(';')].concat(rows.map(r=>cols.map(c=>csvCell(r[c])).join(';'))).join('\r\n');
- // BOM so Excel reads Cyrillic correctly
- const blob=new Blob(['\ufeff'+body],{type:'text/csv;charset=utf-8;'});
- const a=document.createElement('a');
- a.href=URL.createObjectURL(blob); a.download=filename;
- document.body.appendChild(a); a.click(); document.body.removeChild(a);
- URL.revokeObjectURL(a.href);
+ if(!window.XLSX)return toast('Excel сан ачаалагдаагүй байна. Дахин оролдоно уу.');
+ const ws=XLSX.utils.json_to_sheet(rows);
+ const wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,ws,'Тайлан');
+ XLSX.writeFile(wb,filename);
  toast('Татагдлаа');
 }
-function exportHistoryCSV(){
+function exportHistoryXLSX(){
  const logs=historyFeed();
- downloadCSV(`tuuh-${today()}.csv`, logs.map(x=>({
+ downloadXLSX(`tuuh-${today()}.xlsx`, logs.map(x=>({
    'Огноо':new Date(x.created_at).toLocaleString('mn-MN'),
    'Хэрэглэгч':x.user_label||'',
    'Үйлдэл':HIST_ACTION[x.action]||x.action,
@@ -829,7 +823,7 @@ function exportHistoryCSV(){
    'Шалтгаан':x.reason||''
  })));
 }
-window.exportHistoryCSV=exportHistoryCSV;
+window.exportHistoryXLSX=exportHistoryXLSX;
 
 // ---- Guarded delete (superadmin only) ----
 // A record may only be removed while nothing downstream depends on it.
