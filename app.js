@@ -414,7 +414,11 @@ function dashInRange(d){
 }
 function dashLastMonths(n){
  const arr=[];const d=new Date();d.setDate(1);
- for(let i=0;i<n;i++){arr.unshift(d.toISOString().slice(0,7));d.setMonth(d.getMonth()-1)}
+ // getFullYear()/getMonth() read LOCAL time. toISOString() would convert to
+ // UTC first, which in UTC+8 (Ulaanbaatar) can roll the 1st of the month
+ // back into the previous day/month depending on the time of day -- that
+ // silently dropped the current month from every trend chart.
+ for(let i=0;i<n;i++){arr.unshift(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);d.setMonth(d.getMonth()-1)}
  return arr;
 }
 function dashMonthLabel(m){const[y,mo]=m.split('-');return `${mo}/${y.slice(2)}`}
