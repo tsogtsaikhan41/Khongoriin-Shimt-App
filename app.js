@@ -422,6 +422,36 @@ function dashLastMonths(n){
  return arr;
 }
 function dashMonthLabel(m){const[y,mo]=m.split('-');return `${mo}/${y.slice(2)}`}
+// The trend charts need to follow whichever date filter is active instead
+// of always showing a fixed last-6-months window (that's what looked
+// "broken" -- the stat cards changed with the filter but the chart didn't).
+// A single month or a short custom range gets daily buckets so the trend
+// still has more than one point; "Бүх хугацаа" or a longer custom range
+// falls back to monthly buckets.
+function dashBuckets(){
+ if(DASH_RANGE==='month'){
+   const now=new Date();const y=now.getFullYear(),mo=now.getMonth();
+   const days=new Date(y,mo+1,0).getDate();
+   const keys=[];for(let d=1;d<=days;d++)keys.push(`${y}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+   return {keys,unit:'day'};
+ }
+ if(DASH_RANGE==='custom'&&DASH_FROM&&DASH_TO){
+   const[fy,fm,fd]=DASH_FROM.split('-').map(Number),[ty,tm,td]=DASH_TO.split('-').map(Number);
+   const from=new Date(fy,fm-1,fd),to=new Date(ty,tm-1,td);
+   const spanDays=Math.round((to-from)/86400000)+1;
+   if(spanDays>0&&spanDays<=31){
+     const keys=[];const d=new Date(from);
+     for(let i=0;i<spanDays;i++){keys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);d.setDate(d.getDate()+1)}
+     return {keys,unit:'day'};
+   }
+   const keys=[];const d=new Date(from.getFullYear(),from.getMonth(),1),end=new Date(to.getFullYear(),to.getMonth(),1);
+   while(d<=end){keys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);d.setMonth(d.getMonth()+1)}
+   return {keys,unit:'month'};
+ }
+ return {keys:dashLastMonths(6),unit:'month'};
+}
+function dashBucketLabel(k,unit){if(unit==='day'){const[,m,d]=k.split('-');return `${d}/${m}`}return dashMonthLabel(k)}
+function dashBucketKeyOf(dateStr,unit){return dateStr?(unit==='day'?dateStr.slice(0,10):dateStr.slice(0,7)):null}
 function dashChart(id,config){
  if(DASH_CHARTS[id]){DASH_CHARTS[id].destroy();delete DASH_CHARTS[id]}
  const el=document.getElementById(id);
@@ -470,16 +500,16 @@ function renderDashOverall(el){
    +cache.transports.filter(t=>dashInRange(t.transport_date)).reduce((s,t)=>s+num(t.cost),0)
    +cache.products.filter(p=>dashInRange(p.packaging_date)).reduce((s,p)=>s+num(p.packaging_cost),0);
  el.innerHTML=`<div class="stat-grid"><div class="stat"><div class="n">${fmt(animals.length,0)}</div><div class="l">Худалдан авсан амьтан</div></div><div class="stat"><div class="n">${fmt(meat)}</div><div class="l">Махны гарц, кг</div></div><div class="stat"><div class="n">${fmt(byp)}</div><div class="l">Дайвар, кг</div></div><div class="stat"><div class="n">${fmt(revenue,0)}₮</div><div class="l">Борлуулалт</div></div><div class="stat"><div class="n">${fmt(costs,0)}₮</div><div class="l">Бүртгэгдсэн зардал</div></div><div class="stat"><div class="n">${fmt(revenue-costs,0)}₮</div><div class="l">Энгийн зөрүү</div></div></div>
-  ${canvasCard('Орлого ба зардал, сүүлийн 6 сар','dashOverallTrend')}
+  ${canvasCard('Орлого ба зардал','dashOverallTrend')}
   <div class="card"><b>Мэдээллийн төлөв</b><div class="helper">Тооцоолол нь одоогийн бүртгэл дээр тулгуурлана. Санхүүгийн бүрэн нягтлан бодох бүртгэл биш.</div></div>`;
- const months=dashLastMonths(6);
- const rev=months.map(m=>cache.sales.filter(s=>(s.sale_date||'').slice(0,7)===m).reduce((s,x)=>s+num(x.total_amount),0));
- const cost=months.map(m=>
-   cache.animals.filter(a=>(a.purchase_date||'').slice(0,7)===m).reduce((s,a)=>s+num(a.total_cost),0)
-   +cache.processing_events.filter(p=>(p.processing_date||'').slice(0,7)===m).reduce((s,p)=>s+num(p.processing_cost),0)
-   +cache.transports.filter(t=>(t.transport_date||'').slice(0,7)===m).reduce((s,t)=>s+num(t.cost),0)
-   +cache.products.filter(p=>(p.packaging_date||'').slice(0,7)===m).reduce((s,p)=>s+num(p.packaging_cost),0));
- dashChart('dashOverallTrend',{type:'line',data:{labels:months.map(dashMonthLabel),datasets:[
+ const {keys,unit}=dashBuckets();
+ const rev=keys.map(k=>cache.sales.filter(s=>dashBucketKeyOf(s.sale_date,unit)===k).reduce((s,x)=>s+num(x.total_amount),0));
+ const cost=keys.map(k=>
+   cache.animals.filter(a=>dashBucketKeyOf(a.purchase_date,unit)===k).reduce((s,a)=>s+num(a.total_cost),0)
+   +cache.processing_events.filter(p=>dashBucketKeyOf(p.processing_date,unit)===k).reduce((s,p)=>s+num(p.processing_cost),0)
+   +cache.transports.filter(t=>dashBucketKeyOf(t.transport_date,unit)===k).reduce((s,t)=>s+num(t.cost),0)
+   +cache.products.filter(p=>dashBucketKeyOf(p.packaging_date,unit)===k).reduce((s,p)=>s+num(p.packaging_cost),0));
+ dashChart('dashOverallTrend',{type:'line',data:{labels:keys.map(k=>dashBucketLabel(k,unit)),datasets:[
    {label:'Орлого',data:rev,borderColor:DASH_COLORS.accent,backgroundColor:DASH_COLORS.accent,tension:.3},
    {label:'Зардал',data:cost,borderColor:DASH_COLORS.primary,backgroundColor:DASH_COLORS.primary,tension:.3}
  ]}});
@@ -519,24 +549,24 @@ function renderDashWarehouse(el){
    sentSum+=num(ti.quantity_sent_kg);recvSum+=num(r.received_weight_kg);
  });
  const lossPct=sentSum>0?((sentSum-recvSum)/sentSum*100):0;
- const months=dashLastMonths(6);
- const sentByMonth=months.map(m=>{
+ const {keys,unit}=dashBuckets();
+ const sentByBucket=keys.map(k=>{
    let s=0;
-   cache.receivings.filter(r=>(r.received_date||'').slice(0,7)===m).forEach(r=>{
+   cache.receivings.filter(r=>dashBucketKeyOf(r.received_date,unit)===k).forEach(r=>{
      const ti=cache.transport_items.find(t=>t.id===r.transport_item_id);if(ti)s+=num(ti.quantity_sent_kg);
    });
    return s;
  });
- const recvByMonth=months.map(m=>cache.receivings.filter(r=>(r.received_date||'').slice(0,7)===m).reduce((s,r)=>s+num(r.received_weight_kg),0));
+ const recvByBucket=keys.map(k=>cache.receivings.filter(r=>dashBucketKeyOf(r.received_date,unit)===k).reduce((s,r)=>s+num(r.received_weight_kg),0));
  const stockByType={};
  cache.products.forEach(p=>{stockByType[p.product_type]=(stockByType[p.product_type]||0)+num(p.weight_kg)});
  const stypes=Object.keys(stockByType);
  el.innerHTML=`<div class="stat-grid"><div class="stat"><div class="n">${fmtKg(sentSum)}</div><div class="l">Илгээсэн жин, кг</div></div><div class="stat"><div class="n">${fmtKg(recvSum)}</div><div class="l">Хүлээн авсан жин, кг</div></div><div class="stat"><div class="n" style="color:${lossPct>3?DASH_COLORS.bad:DASH_COLORS.good}">${fmt(lossPct)}%</div><div class="l">Дундаж тээврийн алдагдал</div></div></div>
-  ${canvasCard('Сар бүрийн илгээсэн ба хүлээн авсан жин (кг)','dashWarehouseTransport')}
+  ${canvasCard('Илгээсэн ба хүлээн авсан жин (кг)','dashWarehouseTransport')}
   ${canvasCard('Одоогийн бүтээгдэхүүний нөөц, төрлөөр (кг)','dashWarehouseStock')}`;
- dashChart('dashWarehouseTransport',{type:'bar',data:{labels:months.map(dashMonthLabel),datasets:[
-   {label:'Илгээсэн',data:sentByMonth,backgroundColor:DASH_COLORS.primary},
-   {label:'Хүлээн авсан',data:recvByMonth,backgroundColor:DASH_COLORS.accent}
+ dashChart('dashWarehouseTransport',{type:'bar',data:{labels:keys.map(k=>dashBucketLabel(k,unit)),datasets:[
+   {label:'Илгээсэн',data:sentByBucket,backgroundColor:DASH_COLORS.primary},
+   {label:'Хүлээн авсан',data:recvByBucket,backgroundColor:DASH_COLORS.accent}
  ]}});
  dashChart('dashWarehouseStock',{type:'bar',data:{labels:stypes,datasets:[{label:'Нөөц, кг',data:stypes.map(t=>stockByType[t]),backgroundColor:DASH_COLORS.primary}]}});
 }
@@ -550,12 +580,12 @@ function renderDashSales(el){
    byType[p.product_type]=(byType[p.product_type]||0)+num(s.total_amount);
  });
  const types=Object.keys(byType);
- const months=dashLastMonths(6);
- const revByMonth=months.map(m=>cache.sales.filter(s=>(s.sale_date||'').slice(0,7)===m).reduce((s,x)=>s+num(x.total_amount),0));
+ const {keys,unit}=dashBuckets();
+ const revByBucket=keys.map(k=>cache.sales.filter(s=>dashBucketKeyOf(s.sale_date,unit)===k).reduce((s,x)=>s+num(x.total_amount),0));
  el.innerHTML=`<div class="stat-grid"><div class="stat"><div class="n">${fmt(revenue,0)}₮</div><div class="l">Нийт орлого</div></div><div class="stat"><div class="n">${fmt(sales.length,0)}</div><div class="l">Худалдааны тоо</div></div></div>
-  ${canvasCard('Орлогын тренд, сүүлийн 6 сар','dashSalesTrend')}
+  ${canvasCard('Орлогын тренд','dashSalesTrend')}
   ${canvasCard('Бүтээгдэхүүний төрлөөр орлого','dashSalesType')}`;
- dashChart('dashSalesTrend',{type:'line',data:{labels:months.map(dashMonthLabel),datasets:[{label:'Орлого',data:revByMonth,borderColor:DASH_COLORS.accent,backgroundColor:DASH_COLORS.accent,tension:.3}]}});
+ dashChart('dashSalesTrend',{type:'line',data:{labels:keys.map(k=>dashBucketLabel(k,unit)),datasets:[{label:'Орлого',data:revByBucket,borderColor:DASH_COLORS.accent,backgroundColor:DASH_COLORS.accent,tension:.3}]}});
  dashChart('dashSalesType',{type:'bar',data:{labels:types,datasets:[{label:'Орлого',data:types.map(t=>byType[t]),backgroundColor:DASH_COLORS.primary}]}});
 }
 window.dashTab=dashTab;window.dashRange=dashRange;window.dashCustom=dashCustom;
