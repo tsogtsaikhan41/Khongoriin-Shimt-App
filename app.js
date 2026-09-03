@@ -804,7 +804,11 @@ function csvCell(v){
 function downloadCSV(filename,rows){
  if(!rows.length)return toast('Татах мэдээлэл алга');
  const cols=Object.keys(rows[0]);
- const body=[cols.join(';')].concat(rows.map(r=>cols.map(c=>csvCell(r[c])).join(';'))).join('\r\n');
+ // "sep=;" as the very first line tells Excel explicitly which delimiter to
+ // use, regardless of the computer's regional list-separator setting --
+ // without it, a machine set to "," instead of ";" dumps every column into
+ // one cell, which is exactly the "merged headers" you were seeing.
+ const body=['sep=;',cols.join(';')].concat(rows.map(r=>cols.map(c=>csvCell(r[c])).join(';'))).join('\r\n');
  // BOM so Excel reads Cyrillic correctly
  const blob=new Blob(['\ufeff'+body],{type:'text/csv;charset=utf-8;'});
  const a=document.createElement('a');
