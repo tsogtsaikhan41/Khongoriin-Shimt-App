@@ -9,9 +9,11 @@ h2.section-title{font-size:18px;margin:4px 0 14px;color:var(--primary-dark)}.car
 .tile .icon{line-height:1}
 /* accent rail on the dashboard tile keeps the orange purposeful, not decorative */
 .tile.dashboard{border-left:4px solid var(--accent)}
-/* sync button: brand green, orange icon */
-.syncbar .btn-ghost{color:var(--primary);border-color:var(--line);font-weight:700}
-.syncbar .btn-ghost .ic{color:var(--accent)}
+/* sync button: solid orange so it reads as the one thing to tap */
+.syncbar .btn-ghost{background:var(--accent);color:#fff;border:0;font-weight:700;
+  padding:9px 16px;border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.syncbar .btn-ghost:active{background:#A25A22}
+.syncbar .btn-ghost .ic{color:#fff}
 .btn-primary:active{background:var(--primary-dark)}
 .badge.neutral{background:var(--accent-soft);color:#8A4A19}
 
