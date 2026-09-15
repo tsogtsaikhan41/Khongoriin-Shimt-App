@@ -738,8 +738,17 @@ function renderHerderDetail(){
      <div class="stat"><div class="n">${fmt(c.revenue,0)}₮</div><div class="l">Борлуулалтын орлого</div></div>
    </div>
    ${canEdit?`<button class="btn-secondary" style="margin-top:14px" onclick="herderEditOpen('${h.id}')">Засварлах</button>`:''}
+   ${canEdit?`<button class="btn-danger" style="margin-top:10px" onclick="herderDeleteConfirm('${h.id}','${esc(h.full_name)}')">Устгах</button>`:''}
  </div></div>`;
 }
+async function herderDeleteConfirm(id,label){
+ // Wraps the generic deleteRecord() so the modal closes and the list
+ // refreshes on success, but stays open untouched if the user cancels the
+ // reason prompt/confirm, or the delete is blocked (herder still has animals).
+ await deleteRecord('herders',id,label);
+ if(!cache.herders.some(h=>h.id===id)){histClose();navigate('herders')}
+}
+window.herderDeleteConfirm=herderDeleteConfirm;
 function herderAddOpen(){
  $('modal-root').innerHTML=`<div class="modal-back"><div class="modal">
    <div class="modal-head"><b>Малчин нэмэх</b><button class="x" onclick="histClose()">×</button></div>
