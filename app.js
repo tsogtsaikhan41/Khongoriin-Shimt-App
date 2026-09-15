@@ -166,7 +166,7 @@ function renderHome(){
  <div class="tile" onclick="navigate('history')"><div class="icon">${ic('history')}</div><div class="label">Түүх</div><div class="sub">Хэн, хэзээ өөрчилсөн</div></div>
  </div>
  <div class="tile wide" style="margin-top:12px" onclick="navigate('herders')"><div style="display:flex;align-items:center;gap:12px"><span class="icon">${ic('herders')}</span><div><div class="label">Малчид</div><div class="sub">Жагсаалт, хувь нэмэр</div></div></div><div style="font-size:26px">›</div></div>
- <div class="card" style="margin-top:14px"><b>Одоогийн байрлал:</b> ${esc(soum)}<div class="helper">Сум дээр худалдан авалт, нядалга, тээвэрлэлтийг offline хийж болно.</div></div>`;
+ <div class="card" style="margin-top:14px"><b>Одоогийн байрлал:</b> ${esc(soum)}<div class="helper">Худалдан авалт, мал төхөөрөх ажиллагаа болон тээвэрлэлтийг интернэтгүй орчинд хийж болно.</div></div>`;
 }
 function navigate(screen){
   if(screen==='home')return renderHome();
@@ -300,16 +300,35 @@ function transportLabel(t){
 }
 function renderReceiving(){
  const ts=cache.transports.filter(t=>t.destination_location==='SHOP'&&!t.is_received).sort((a,b)=>b.transport_date?.localeCompare(a.transport_date||'')||0);
- $('view').innerHTML=formCard(`<form id="receivingForm"><label>Тээвэр</label><select name="transport_id" required>${ts.map(t=>`<option value="${t.id}">${esc(transportLabel(t))}</option>`).join('')||'<option>Тээвэр алга</option>'}</select><label>Хүлээн авсан огноо</label><input type="date" name="date" value="${today()}" required><label>Хүлээн авсан жин (кг)</label><input type="number" name="weight" min="0" step="0.001" required><div class="calc-box"><span>Жингийн зөрүү (Дэлгүүрт хүлээн авах үеийн):</span><b id="recvDiff">—</b></div><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
- const f=$('receivingForm');function c(){const t=cache.transports.find(x=>x.id===f.transport_id.value);$('recvDiff').textContent=t?fmt(num(t.total_sent_kg)-num(f.weight.value))+' кг':'—'}f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const t=cache.transports.find(x=>x.id===f.transport_id.value);if(!t)return;try{const res=await rpc('receive_transport',{p_transport_id:t.id,p_received_date:String(f.date.value),p_note:f.note.value||null,p_user_id:session.user.id,p_received_weight_kg:num(f.weight.value)});await mergeFetch('receivings','id',res.receiving_id);await mergeFetch('materials','id',res.material_id);toast('Хүлээн авалт хадгалагдлаа');renderReceiving()}catch(err){toast('Алдаа: '+errMn(err))}};c();
+ $('view').innerHTML=formCard(`<form id="receivingForm"><label>Тээвэр</label><select name="transport_id" required>${ts.map(t=>`<option value="${t.id}">${esc(transportLabel(t))}</option>`).join('')||'<option>Тээвэр алга</option>'}</select><label>Хүлээн авсан огноо</label><input type="date" name="date" value="${today()}" required><label>Хүлээн авсан жин (кг)</label><input type="number" name="weight" min="0" step="0.001" required><div class="calc-box"><span>Жингийн зөрүү (Дэлгүүрт хүлээн авах үеийн):</span><b id="recvDiff">—</b></div><div class="calc-box"><span>Хүлээн авсан зардал (энэ малын хувьд, лавлагаа):</span><b id="recvCost">—</b></div><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
+ const f=$('receivingForm');
+ function c(){
+   const t=cache.transports.find(x=>x.id===f.transport_id.value);
+   $('recvDiff').textContent=t?fmt(num(t.total_sent_kg)-num(f.weight.value))+' кг':'—';
+   // Each transport carries exactly one animal's material (see createTransport),
+   // so the transport_item's animal_id tells us whose received-cost to show.
+   const item=t?cache.transport_items.find(i=>i.transport_id===t.id):null;
+   const b=item?animalCostBreakdown(item.animal_id):null;
+   $('recvCost').textContent=b?`${fmt(b.receivedCost,0)}₮ (Х.а: ${fmt(b.purchaseCost,0)} + Нядалга: ${fmt(b.processingCost,0)} + Тээвэр: ${fmt(b.transportCost,0)})`:'—';
+ }
+ f.oninput=c;f.onchange=c;f.onsubmit=async e=>{e.preventDefault();const t=cache.transports.find(x=>x.id===f.transport_id.value);if(!t)return;try{const res=await rpc('receive_transport',{p_transport_id:t.id,p_received_date:String(f.date.value),p_note:f.note.value||null,p_user_id:session.user.id,p_received_weight_kg:num(f.weight.value)});await mergeFetch('receivings','id',res.receiving_id);await mergeFetch('materials','id',res.material_id);toast('Хүлээн авалт хадгалагдлаа');renderReceiving()}catch(err){toast('Алдаа: '+errMn(err))}};c();
 }
 
 function renderPackaging(){
  const mats=cache.materials.filter(m=>m.location_type==='SHOP'&&num(m.current_available)>0);  // shop stock: meat and byproduct alike, same list as Агуулахconst products=cache.products.filter(p=>num(p.current_available)>0);
- $('view').innerHTML=formCard(`<form id="packForm"><label>Хүлээн авсан махны нөөц</label><select name="material_id" required>${mats.map(m=>`<option value="${m.id}">${esc(m.animal_code||'—')} · ${esc(m.animal_type||'')} · ${esc(m.material_type==='MEAT'?'Мах':'Дайвар')} · ${fmtKg(m.current_available)} кг</option>`).join('')||'<option value="">Дэлгүүрт материал алга</option>'}</select><label>Бүтээгдэхүүний төрөл</label><select name="product_type" id="productType" required><option value="">-- сонгох --</option><option>Гулууз (бүтэн)</option><option>Өрөөл (хаа+гуя)</option><option>Жижиглэн</option><option>Хорхог багц</option></select><label>Нийт жин (кг)</label><input name="weight" id="packWeight" type="number" min="0.1" step="0.001" required><div id="khQtyWrap" class="hidden"><div class="row2"><div><label>Багцын жин (кг)</label><select id="khSize"><option value="1.5">1.5 кг</option><option value="2.3">2.3 кг</option><option value="3.3">3.3 кг</option><option value="custom">Бусад (гараар)</option></select></div><div><label>Баглааны тоо</label><input id="khQty" type="number" min="1" step="1" value="1"></div></div><div id="khCustomWrap" class="hidden"><label>Багцын жин гараар (кг)</label><input id="khCustom" type="number" min="0.001" step="0.001"></div></div><div class="calc-box"><span>Нийт бүтээгдэхүүний жин:</span><b id="packTotal">0 кг</b></div><label>Савлагааны зардал (₮)</label><input name="cost" type="number" min="0" step="1" value="0"><label>Огноо</label><input name="date" type="date" value="${today()}" required><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
+ $('view').innerHTML=formCard(`<form id="packForm"><label>Хүлээн авсан махны нөөц</label><select name="material_id" id="packMaterial" required>${mats.map(m=>`<option value="${m.id}">${esc(m.animal_code||'—')} · ${esc(m.animal_type||'')} · ${esc(m.material_type==='MEAT'?'Мах':'Дайвар')} · ${fmtKg(m.current_available)} кг</option>`).join('')||'<option value="">Дэлгүүрт материал алга</option>'}</select><div class="helper" id="packCostRef"></div><label>Бүтээгдэхүүний төрөл</label><select name="product_type" id="productType" required><option value="">-- сонгох --</option><option>Гулууз (бүтэн)</option><option>Өрөөл (хаа+гуя)</option><option>Жижиглэн</option><option>Хорхог багц</option></select><label>Нийт жин (кг)</label><input name="weight" id="packWeight" type="number" min="0.1" step="0.001" required><div id="khQtyWrap" class="hidden"><div class="row2"><div><label>Багцын жин (кг)</label><select id="khSize"><option value="1.5">1.5 кг</option><option value="2.3">2.3 кг</option><option value="3.3">3.3 кг</option><option value="custom">Бусад (гараар)</option></select></div><div><label>Баглааны тоо</label><input id="khQty" type="number" min="1" step="1" value="1"></div></div><div id="khCustomWrap" class="hidden"><label>Багцын жин гараар (кг)</label><input id="khCustom" type="number" min="0.001" step="0.001"></div></div><div class="calc-box"><span>Нийт бүтээгдэхүүний жин:</span><b id="packTotal">0 кг</b></div><label>Савлагааны зардал (₮)</label><input name="cost" type="number" min="0" step="1" value="0"><label>Огноо</label><input name="date" type="date" value="${today()}" required><label>Тайлбар</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`);
  const f=$('packForm');const type=$('productType');
  const isKh=()=>type.value==='Хорхог багц';
  const unitSize=()=>{const v=$('khSize').value;return v==='custom'?num($('khCustom').value):num(v)};
+ // Reference only -- purchase+slaughter+transport cost for the animal this
+ // material came from. Not editable here; it's informational context while
+ // deciding packaging, same number Хүлээн авалт already showed for it.
+ function updateCostRef(){
+   const m=cache.materials.find(x=>x.id===$('packMaterial').value);
+   const b=m?animalCostBreakdown(m.animal_id):null;
+   $('packCostRef').textContent=b?`Хүлээн авсан зардал (${esc(m.animal_code||'')}): ${fmt(b.receivedCost,0)}₮`:'';
+ }
+ $('packMaterial').onchange=updateCostRef;updateCostRef();
  function calc(){
    const kh=isKh();
    $('khQtyWrap').classList.toggle('hidden',!kh);
@@ -368,8 +387,14 @@ const INV_TABS=[
  {id:'sales',label:'Борлуулсан'}
 ];
 let INV_TAB='materials';
+let TRACE_FILTER='';
 function renderInventory(){
- const tabs=INV_TABS.map(t=>`<button class="btn-secondary" style="flex:1;min-width:0;padding:9px 6px;font-size:12.5px;${INV_TAB===t.id?'background:var(--primary);color:#fff;border-color:var(--primary)':''}" onclick="invTab('${t.id}')">${t.label}</button>`).join('');
+ // Мал мөшгих shows cost AND revenue/profit per animal -- the same
+ // margin-sensitive combination already gated to superadmin everywhere else
+ // (Санхүүгийн тайлан export, Мал/Санхүү screen split). Kept consistent here
+ // rather than opening it to every admin.
+ const tabs=(profile?.role==='superadmin'?INV_TABS.concat([{id:'trace',label:'Мал мөшгих'}]):INV_TABS)
+   .map(t=>`<button class="btn-secondary" style="flex:1;min-width:0;padding:9px 6px;font-size:12.5px;${INV_TAB===t.id?'background:var(--primary);color:#fff;border-color:var(--primary)':''}" onclick="invTab('${t.id}')">${t.label}</button>`).join('');
  $('view').innerHTML=`<div class="actions" style="margin-bottom:14px;gap:6px;flex-wrap:nowrap">${tabs}</div><div id="invBody"></div>`;
  renderInvBody();
 }
@@ -379,13 +404,54 @@ function renderInvBody(){
  if(INV_TAB==='materials')return renderInvMaterials(body);
  if(INV_TAB==='products')return renderInvProducts(body);
  if(INV_TAB==='sales')return renderInvSales(body);
+ if(INV_TAB==='trace'&&profile?.role==='superadmin')return renderInvTrace(body);
 }
+function renderInvTrace(body){
+ body.innerHTML=`<div class="card"><input id="traceSearch" placeholder="Малын код хайх..." value="${esc(TRACE_FILTER)}"></div><div id="traceList"></div>`;
+ $('traceSearch').oninput=e=>{TRACE_FILTER=e.target.value;renderTraceList()};
+ renderTraceList();
+}
+function renderTraceList(){
+ const el=$('traceList');if(!el)return;
+ const q=TRACE_FILTER.trim().toLowerCase();
+ const items=cache.animals.filter(a=>!q||a.animal_code.toLowerCase().includes(q)).sort((a,b)=>(b.purchase_date||'').localeCompare(a.purchase_date||''));
+ if(!items.length){el.innerHTML='<div class="empty">Мал олдсонгүй</div>';return}
+ el.innerHTML=formCard(`<table><tr><th>Мал</th><th>Нийт зардал</th><th>Орлого</th><th>Ашиг</th><th></th></tr>${items.map(a=>{
+   const b=animalCostBreakdown(a.id);
+   return `<tr><td>${esc(a.animal_code)}<div class="helper">${esc(a.animal_type)} · ${esc(a.purchase_date||'')}</div></td><td>${fmt(b.totalCost,0)}₮</td><td>${fmt(b.revenue,0)}₮</td><td><b class="${b.profit<0?'danger-text':''}">${fmt(b.profit,0)}₮</b></td><td><button class="btn-ghost" onclick="traceOpen('${a.id}')">Дэлгэрэнгүй</button></td></tr>`;
+ }).join('')}</table>`);
+}
+function traceOpen(id){
+ const b=animalCostBreakdown(id);if(!b)return;
+ const herder=cache.herders.find(h=>h.id===b.animal.herder_id);
+ $('modal-root').innerHTML=`<div class="modal-back"><div class="modal">
+  <div class="modal-head"><b>${esc(b.animal.animal_code)}</b><button class="x" onclick="histClose()">×</button></div>
+  <div class="helper" style="margin:4px 0 12px">${esc(herder?.full_name||'—')} · ${esc(b.animal.soum)} · ${esc(b.animal.animal_type)}${b.animal.estimated_age_years?', '+fmt(b.animal.estimated_age_years)+' нас':''}</div>
+  <table>
+   <tr><th>Худалдан авалт</th><td>${fmt(b.purchaseCost,0)}₮</td></tr>
+   <tr><th>Нядалга</th><td>${fmt(b.processingCost,0)}₮</td></tr>
+   <tr><th>Тээвэрлэлт</th><td>${fmt(b.transportCost,0)}₮</td></tr>
+   <tr><th>Хүлээн авсан нийт зардал</th><td><b>${fmt(b.receivedCost,0)}₮</b></td></tr>
+   <tr><th>Савлагаа</th><td>${fmt(b.packagingCost,0)}₮</td></tr>
+   <tr><th>Нийт зардал</th><td><b>${fmt(b.totalCost,0)}₮</b></td></tr>
+  </table>
+  <div class="stat-grid" style="margin-top:12px">
+   <div class="stat"><div class="n">${fmtKg(b.meatKg)}</div><div class="l">Гарсан мах, кг</div></div>
+   <div class="stat"><div class="n">${fmtKg(b.bypKg)}</div><div class="l">Гарсан дайвар, кг</div></div>
+   <div class="stat"><div class="n">${fmt(b.productsCount,0)}</div><div class="l">Бүтээгдэхүүн</div></div>
+   <div class="stat"><div class="n">${fmt(b.soldQty)}</div><div class="l">Зарагдсан тоо хэмжээ</div></div>
+   <div class="stat"><div class="n">${fmt(b.revenue,0)}₮</div><div class="l">Орлого</div></div>
+   <div class="stat"><div class="n">${fmt(b.profit,0)}₮</div><div class="l">Ашиг</div></div>
+  </div>
+ </div></div>`;
+}
+window.traceOpen=traceOpen;
 function renderInvMaterials(body){
  // Only lots that actually completed Хүлээн авалт → Дэлгүүрт хүлээн авах
  // (location_type SHOP) show up here -- material still sitting at a soum,
  // or already fully packaged into products, is intentionally excluded.
  const mats=cache.materials.filter(m=>m.location_type==='SHOP'&&num(m.current_available)>0);
- body.innerHTML=formCard(mats.length?`<table><tr><th>Амьтан</th><th>Мал</th><th>Төрөл</th><th>Үлдэгдэл</th></tr>${mats.map(m=>`<tr><td>${esc(m.animal_code||'—')}</td><td>${esc(m.animal_type||'')}</td><td>${esc(m.material_type==='MEAT'?'Мах':'Дайвар')}</td><td><b>${fmtKg(m.current_available)} кг</b></td></tr>`).join('')}</table>`:'<div class="empty">Дэлгүүрт хүлээн авсан материал алга</div>');
+ body.innerHTML=formCard(mats.length?`<table><tr><th>Амьтан</th><th>Мал</th><th>Төрөл</th><th>Үлдэгдэл</th><th>Хүлээн авсан зардал</th></tr>${mats.map(m=>{const b=animalCostBreakdown(m.animal_id);return `<tr><td>${esc(m.animal_code||'—')}</td><td>${esc(m.animal_type||'')}</td><td>${esc(m.material_type==='MEAT'?'Мах':'Дайвар')}</td><td><b>${fmtKg(m.current_available)} кг</b></td><td>${b?fmt(b.receivedCost,0)+'₮':'—'}</td></tr>`}).join('')}</table>`:'<div class="empty">Дэлгүүрт хүлээн авсан материал алга</div>');
 }
 function renderInvProducts(body){
  const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));
@@ -598,6 +664,34 @@ function renderDashSales(el){
 // the dashboard charts, so it always matches whatever period is on screen.
 // The last sheet (Нэгдсэн) is the one-row-per-animal traceability ledger --
 // herder to sale, with every attributable cost and the resulting margin.
+// Per-animal cost/revenue breakdown, walking the same chain the finance
+// export already walks: purchase -> processing -> transport (all of which
+// are attributed whole to the animal, same simplification the export already
+// used -- an animal that shares a transport isn't split proportionally by
+// weight) -> packaging -> sales. "received" = cost accumulated through the
+// receiving stage only (purchase+processing+transport); "total" also adds
+// packaging, matching what "Нийт зардал" means in the finance export.
+function animalCostBreakdown(animalId){
+ const a=cache.animals.find(x=>x.id===animalId);
+ if(!a)return null;
+ const proc=cache.processing_events.find(p=>p.animal_id===animalId);
+ const materials=cache.materials.filter(m=>m.animal_id===animalId);
+ const meatKg=materials.filter(m=>m.material_type==='MEAT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);
+ const bypKg=materials.filter(m=>m.material_type==='BYPRODUCT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);
+ const transportIds=[...new Set(cache.transport_items.filter(ti=>ti.animal_id===animalId).map(ti=>ti.transport_id))];
+ const transportCost=transportIds.reduce((s,tid)=>s+num(cache.transports.find(x=>x.id===tid)?.cost),0);
+ const purchaseCost=num(a.total_cost);
+ const processingCost=num(proc?.processing_cost);
+ const receivedCost=purchaseCost+processingCost+transportCost;
+ const products=cache.products.filter(p=>p.animal_id===animalId);
+ const packagingCost=products.reduce((s,p)=>s+num(p.packaging_cost),0);
+ const totalCost=receivedCost+packagingCost;
+ const productIds=new Set(products.map(p=>p.id));
+ const sales=cache.sales.filter(s=>productIds.has(s.product_id));
+ const revenue=sales.reduce((s,x)=>s+num(x.total_amount),0);
+ const soldQty=sales.reduce((s,x)=>s+num(x.qty),0);
+ return {animal:a,purchaseCost,processingCost,transportCost,receivedCost,packagingCost,totalCost,meatKg,bypKg,productsCount:products.length,soldQty,revenue,profit:revenue-totalCost};
+}
 function exportFinanceXLSX(){
  if(!window.XLSX)return toast('Excel сан ачаалагдаагүй байна. Дахин оролдоно уу.');
  const sheet=rows=>XLSX.utils.json_to_sheet(rows.length?rows:[{'Мэдээлэл':'Байхгүй'}]);
@@ -633,26 +727,15 @@ function exportFinanceXLSX(){
 
  const ledgerRows=animals.map(a=>{
    const herder=cache.herders.find(h=>h.id===a.herder_id);
-   const proc=cache.processing_events.find(p=>p.animal_id===a.id);
-   const materials=cache.materials.filter(m=>m.animal_id===a.id);
-   const meatKg=materials.filter(m=>m.material_type==='MEAT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);
-   const bypKg=materials.filter(m=>m.material_type==='BYPRODUCT'&&m.source_processing_id).reduce((s,m)=>s+num(m.original_quantity_kg),0);
-   const transportIds=[...new Set(cache.transport_items.filter(ti=>ti.animal_id===a.id).map(ti=>ti.transport_id))];
-   const transportCost=transportIds.reduce((s,tid)=>s+num(cache.transports.find(x=>x.id===tid)?.cost),0);
-   const aProducts=cache.products.filter(p=>p.animal_id===a.id);
-   const packagingCost=aProducts.reduce((s,p)=>s+num(p.packaging_cost),0);
-   const productIds=new Set(aProducts.map(p=>p.id));
-   const aSales=cache.sales.filter(s=>productIds.has(s.product_id));
-   const revenue=aSales.reduce((s,x)=>s+num(x.total_amount),0);
-   const soldQty=aSales.reduce((s,x)=>s+num(x.qty),0);
-   const totalCost=num(a.total_cost)+num(proc?.processing_cost)+transportCost+packagingCost;
+   const b=animalCostBreakdown(a.id);
    return {
      'Малын код':a.animal_code,'Малчин':herder?.full_name||'—','Сум':a.soum,'Төрөл':a.animal_type,
-     'Худалдан авалтын үнэ':num(a.total_cost),'Нядалгын зардал':num(proc?.processing_cost),
-     'Тээврийн зардал':transportCost,'Савлагааны зардал':packagingCost,'Нийт зардал':totalCost,
-     'Гарсан мах (кг)':meatKg,'Гарсан дайвар (кг)':bypKg,
-     'Бүтээгдэхүүний тоо':aProducts.length,'Зарагдсан тоо хэмжээ':soldQty,
-     'Орлого':revenue,'Ашиг':revenue-totalCost,'Худалдан авсан огноо':a.purchase_date
+     'Худалдан авалтын үнэ':b.purchaseCost,'Нядалгын зардал':b.processingCost,
+     'Тээврийн зардал':b.transportCost,'Хүлээн авсан нийт зардал':b.receivedCost,
+     'Савлагааны зардал':b.packagingCost,'Нийт зардал':b.totalCost,
+     'Гарсан мах (кг)':b.meatKg,'Гарсан дайвар (кг)':b.bypKg,
+     'Бүтээгдэхүүний тоо':b.productsCount,'Зарагдсан тоо хэмжээ':b.soldQty,
+     'Орлого':b.revenue,'Ашиг':b.profit,'Худалдан авсан огноо':a.purchase_date
    };
  });
 
@@ -722,7 +805,7 @@ function renderHerderDetail(){
  const canEdit=profile?.role==='superadmin';
  $('modal-root').innerHTML=`<div class="modal-back"><div class="modal">
    <div class="modal-head"><b>${esc(h.full_name)}</b><button class="x" onclick="histClose()">×</button></div>
-   <div class="helper" style="margin:4px 0 12px">${h.aimag?esc(h.aimag)+' · ':''}${esc(h.soum)}${h.herd_size?' · Сүрэг: '+fmt(h.herd_size,0):''}${h.last_vaccination_date?' · Вакцин: '+esc(h.last_vaccination_date):''}${h.certified?' · <span class="badge good">MNS 6891</span>':''}</div>
+   <div class="helper" style="margin:4px 0 12px">${h.aimag?esc(h.aimag)+' · ':''}${esc(h.soum)}${h.herd_size?' · Сүрэг: '+fmt(h.herd_size,0):''}${h.last_vaccination_date?' · Вакцин: '+esc(h.last_vaccination_date):''}${h.certified?' · <span class="badge good">MNS 6891</span>':''}${h.mns_certificate_number?' · Гэрчилгээ №'+esc(h.mns_certificate_number):''}</div>
    <label style="margin-top:0">Хугацаа</label><select onchange="herderDetailMonth(this.value)"><option value="">Бүх хугацаа</option>${months.map(m=>`<option value="${m}" ${HERD_DETAIL_MONTH===m?'selected':''}>${monthLabel(m)}</option>`).join('')}</select>
    <div class="stat-grid" style="margin-top:12px">
      <div class="stat"><div class="n">${fmt(c.animalsCount,0)}</div><div class="l">Тоолсон мал</div></div>
@@ -753,6 +836,7 @@ function herderAddOpen(onSaved){
    <div class="row2"><div><label>Малчны овог</label><input name="surname" required></div><div><label>Малчны нэр</label><input name="given" required></div></div>
    <label>Хариуцлагатай Нүүдэлчин стандартаар баталгаажсан эсэх (MNS 6891)</label>
    <select name="certified"><option value="false">Үгүй</option><option value="true">Тийм</option></select>
+   <label>MNS 6891 сертификатын дугаар (заавал биш, зөвхөн бүртгэлд)</label><input name="mns_certificate_number" placeholder="Жишээ: MNS-2026-0001">
    <label>Мал сүргийн вакцинд хамрагдсан огноо</label><input name="last_vaccination_date" type="date" required>
    <label>Сүргийн хэмжээ (заавал биш)</label><input name="herd_size" type="number" min="0" step="1">
    <button class="btn-primary">Хадгалах</button></form>
@@ -765,7 +849,7 @@ function herderAddOpen(onSaved){
    const soum=String(fd.get('soum')||''),aimag=String(fd.get('aimag')||'').trim();
    const vaccinationDate=String(fd.get('last_vaccination_date')||'');
    if(!full_name||!soum||!aimag||!vaccinationDate)return toast('Нэр, аймаг, сум, вакцины огноо шаардлагатай');
-   const row={id:uuid(),full_name,surname,given_name:given,aimag,soum,location_detail:null,herd_size:fd.get('herd_size')?num(fd.get('herd_size')):null,last_vaccination_date:vaccinationDate,certified:String(fd.get('certified'))==='true',created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+   const row={id:uuid(),full_name,surname,given_name:given,aimag,soum,location_detail:null,herd_size:fd.get('herd_size')?num(fd.get('herd_size')):null,last_vaccination_date:vaccinationDate,certified:String(fd.get('certified'))==='true',mns_certificate_number:String(fd.get('mns_certificate_number')||'').trim()||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
    try{
      let saved;
      // This modal can now be opened from the offline-capable purchase screen
@@ -803,6 +887,7 @@ function herderEditOpen(id){
    <div class="row2"><div><label>Малчны овог</label><input name="surname" value="${esc(fallbackSurname)}" required></div><div><label>Малчны нэр</label><input name="given" value="${esc(fallbackGiven)}" required></div></div>
    <label>Хариуцлагатай Нүүдэлчин стандартаар баталгаажсан эсэх (MNS 6891)</label>
    <select name="certified"><option value="false" ${!h.certified?'selected':''}>Үгүй</option><option value="true" ${h.certified?'selected':''}>Тийм</option></select>
+   <label>MNS 6891 сертификатын дугаар (заавал биш, зөвхөн бүртгэлд)</label><input name="mns_certificate_number" value="${esc(h.mns_certificate_number||'')}" placeholder="Жишээ: MNS-2026-0001">
    <label>Мал сүргийн вакцинд хамрагдсан огноо</label><input name="last_vaccination_date" type="date" value="${h.last_vaccination_date||''}" required>
    <label>Сүргийн хэмжээ (заавал биш)</label><input name="herd_size" type="number" min="0" step="1" value="${h.herd_size??''}">
    <button class="btn-primary">Хадгалах</button></form>
@@ -815,7 +900,7 @@ function herderEditOpen(id){
    const soum=String(fd.get('soum')||''),aimag=String(fd.get('aimag')||'').trim();
    const vaccinationDate=String(fd.get('last_vaccination_date')||'');
    if(!full_name||!soum||!aimag||!vaccinationDate)return toast('Нэр, аймаг, сум, вакцины огноо шаардлагатай');
-   const row={id:h.id,full_name,surname,given_name:given,aimag,soum,location_detail:h.location_detail??null,herd_size:fd.get('herd_size')?num(fd.get('herd_size')):null,last_vaccination_date:vaccinationDate,certified:String(fd.get('certified'))==='true',created_by:h.created_by,created_at:h.created_at,updated_at:new Date().toISOString()};
+   const row={id:h.id,full_name,surname,given_name:given,aimag,soum,location_detail:h.location_detail??null,herd_size:fd.get('herd_size')?num(fd.get('herd_size')):null,last_vaccination_date:vaccinationDate,certified:String(fd.get('certified'))==='true',mns_certificate_number:String(fd.get('mns_certificate_number')||'').trim()||null,created_by:h.created_by,created_at:h.created_at,updated_at:new Date().toISOString()};
    try{
      const saved=await upsertDirect('herders',row);
      cache.herders=cache.herders.filter(x=>x.id!==h.id).concat(saved);
@@ -826,7 +911,7 @@ function herderEditOpen(id){
 function exportHerdersXLSX(){
  const rows=cache.herders.slice().sort((a,b)=>a.full_name.localeCompare(b.full_name,'mn')).map(h=>{
    const c=herderContribution(h.id,null);
-   return {'Нэр':h.full_name,'Сум':h.soum,'Мал (тоо)':c.animalsCount,'Амьд жин (кг)':fmtKg(c.liveWeight),'Худалдан авалтын үнэ':c.purchaseCost,'Гарсан мах (кг)':fmtKg(c.meatKg),'Баглагдсан бүтээгдэхүүн':c.productsCount,'Зарагдсан тоо хэмжээ':c.soldQty,'Борлуулалтын орлого':c.revenue};
+   return {'Нэр':h.full_name,'Сум':h.soum,'MNS 6891 сертификатын дугаар':h.mns_certificate_number||'','Мал (тоо)':c.animalsCount,'Амьд жин (кг)':fmtKg(c.liveWeight),'Худалдан авалтын үнэ':c.purchaseCost,'Гарсан мах (кг)':fmtKg(c.meatKg),'Баглагдсан бүтээгдэхүүн':c.productsCount,'Зарагдсан тоо хэмжээ':c.soldQty,'Борлуулалтын орлого':c.revenue};
  });
  downloadXLSX(`malchid-${today()}.xlsx`,rows);
 }
@@ -834,7 +919,7 @@ window.herderAddOpen=herderAddOpen;window.herderOpen=herderOpen;window.herderEdi
 
 const HIST_ENTITY={sales:'Борлуулалт',animals:'Худалдан авалт',herders:'Малчин',processing_events:'Мал төхөөрөх ажиллагаа',transports:'Тээвэрлэлт',transport_items:'Тээвэрлэлт',receivings:'Хүлээн авалт',products:'Баглаа боодол',material_lots:'Материал',profiles:'Хэрэглэгч'};
 const HIST_ACTION={CREATE:'Бүртгэсэн',UPDATE:'Засварласан',DELETE:'Устгасан'};
-const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',weight_kg:'Жин (кг)',unit_weight_kg:'Нэгжийн жин (кг)',unit:'Нэгж',quantity_sent_kg:'Илгээсэн жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',packaging_date:'Савласан огноо',packaging_cost:'Савлагааны зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',surname:'Овог',given_name:'Нэр',aimag:'Аймаг',last_vaccination_date:'Вакцины огноо',herd_size:'Мал толгой',certified:'MNS 6891 баталгаажсан',status:'Төлөв',material_type:'Материалын төрөл',original_quantity_kg:'Анхны жин (кг)',estimated_age_years:'Нас (жил)',role:'Эрх'};
+const HIST_FIELD={qty:'Тоо хэмжээ',unit_price:'Нэгж үнэ',total_amount:'Нийт дүн',sale_date:'Огноо',customer:'Хэрэглэгч',customer_phone:'Утас',purchase_date:'Огноо',live_weight_kg:'Амьд жин (кг)',price_per_kg:'Үнэ/кг',total_cost:'Нийт зардал',animal_type:'Мал төрөл',soum:'Сум',animal_code:'Малын код',product_code:'Бүтээгдэхүүний код',product_type:'Бүтээгдэхүүн',quantity_kg:'Жин (кг)',weight_kg:'Жин (кг)',unit_weight_kg:'Нэгжийн жин (кг)',unit:'Нэгж',quantity_sent_kg:'Илгээсэн жин (кг)',received_weight_kg:'Хүлээн авсан жин (кг)',received_date:'Хүлээн авсан огноо',processing_date:'Нядалгын огноо',processing_cost:'Нядалгын зардал',transport_date:'Тээврийн огноо',cost:'Зардал',packaging_date:'Савласан огноо',packaging_cost:'Савлагааны зардал',note:'Тайлбар',location:'Байршил',full_name:'Нэр',surname:'Овог',given_name:'Нэр',aimag:'Аймаг',last_vaccination_date:'Вакцины огноо',herd_size:'Мал толгой',certified:'MNS 6891 баталгаажсан',mns_certificate_number:'MNS 6891 гэрчилгээний дугаар',status:'Төлөв',material_type:'Материалын төрөл',original_quantity_kg:'Анхны жин (кг)',estimated_age_years:'Нас (жил)',role:'Эрх'};
 const HIST_SKIP=new Set(['id','created_at','updated_at','created_by','responsible_user','animal_id','product_id','herder_id','source_material_id','source_processing_id','transport_id','transport_item_id','lot_id','parent_lot_id','related_entity_id','related_entity_type','location_type','destination_location','source_location','_sync_state','user_id']);
 // Raw columns already shown as a resolved, human-readable row by histLinked
 // (Малын код, Бүтээгдэхүүний код, Байршил). Hidden from the CREATE table to
@@ -847,7 +932,7 @@ const HIST_LINKED_RAW={animals:['animal_code'],products:['product_code'],process
 const HIST_LOCKED=new Set(['animal_code','product_code','soum','status','total_amount','total_cost']);
 const HIST_EDITABLE={
  animals:['live_weight_kg','price_per_kg','animal_type','estimated_age_years','purchase_date','note'],
- herders:['surname','given_name','herd_size','certified','last_vaccination_date'],
+ herders:['surname','given_name','herd_size','certified','mns_certificate_number','last_vaccination_date'],
  processing_events:['processing_date','processing_cost','location','note'],
  transports:['transport_date','cost','note'],
  receivings:['received_date','received_weight_kg','note'],
@@ -860,7 +945,7 @@ const HIST_DATE_FIELD={animals:'purchase_date',processing_events:'processing_dat
 // Fixed field order per section so the detail modal reads the same way every
 // time: identity/context first, money/weight in the middle, note always last.
 const HIST_DETAIL_ORDER={
- herders:['surname','given_name','soum','aimag','herd_size','certified','last_vaccination_date','note'],
+ herders:['surname','given_name','soum','aimag','herd_size','certified','mns_certificate_number','last_vaccination_date','note'],
  animals:['animal_type','estimated_age_years','live_weight_kg','price_per_kg','total_cost','certified','note'],
  processing_events:['location','processing_cost','note'],
  transports:['cost','note'],
