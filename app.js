@@ -197,57 +197,52 @@ function renderPurchase(){
  <label>Огноо</label><input type="date" name="date" value="${today()}" required>
  <label>Аймаг</label><input name="aimag" value="Баянхонгор" readonly>
  <label>Сум</label>${(profile?.role!=='superadmin'&&profile?.soum)?`<input name="soum" value="${esc(profile.soum)}" readonly>`:`<select name="soum" required><option value="" ${settings.soum?'':'selected'}>-- сум сонгох --</option>${SOUMS.map(s=>`<option ${settings.soum===s.name?'selected':''}>${s.name}</option>`).join('')}</select>`}
- <div class="row2"><div><label>Малчны овог</label><input name="herderSurname" required placeholder="Жишээ: Дондов"></div><div><label>Малчны нэр</label><input name="herderGiven" required placeholder="Жишээ: Батэрдэнэ"></div></div>
- <label>Хариуцлагатай Нүүдэлчин стандартаар баталгаажсан эсэх (MNS 6891)</label>
- <select name="certified"><option value="false">Үгүй</option><option value="true">Тийм</option></select>
- <label>Мал сүргийн вакцинд хамрагдсан огноо</label><input type="date" name="vaccinationDate" required>
+ <label>Малчин хайх</label><input id="purchaseHerderSearch" placeholder="Нэр эсвэл сум бичиж хайх...">
+ <label>Малчин сонгох</label><select name="herder_id" id="herderSelect" required><option value="">-- малчин сонгох --</option></select>
+ <div class="helper">Жагсаалтад алга байна уу? <a href="#" onclick="herderAddOpen(purchaseHerderAdded);return false">+ Шинэ малчин бүртгэх</a></div>
  <label>Мал төрөл</label><select name="animalType" required><option value="">-- сонгох --</option><option>Ямаа</option><option>Хонь</option><option>Үхэр</option><option>Адуу</option><option>Тэмээ</option></select>
  <label>Малын нас (жил)</label><input type="number" name="ageYears" min="0" step="0.5" required>
  <div class="row2"><div><label>Амьд жин (кг)</label><input type="number" name="liveWeight" min="0.1" step="0.001" required></div><div><label>Үнэ / кг (₮)</label><input type="number" name="pricePerKg" min="0" step="1" required></div></div>
  <div class="calc-box"><span>Нийт үнэ:</span><b id="purchaseTotal">0 ₮</b></div>
  <label>Тайлбар (заавал биш)</label><textarea name="note" rows="2"></textarea><button class="btn-primary">Хадгалах</button></form>`)+`<div id="purchaseList"></div>`;
  const f=$('purchaseForm');function c(){ $('purchaseTotal').textContent=fmt(num(f.liveWeight.value)*num(f.pricePerKg.value),0)+' ₮'};f.oninput=c;
- f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f);await createPurchase(fd)};renderPurchaseList();
+ f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f);await createPurchase(fd)};
+ renderPurchaseList();
+ renderPurchaseHerderOptions();
+ $('purchaseHerderSearch').oninput=e=>renderPurchaseHerderOptions(e.target.value);
 }
+// Populates/refreshes the herder <select> on the purchase form from the
+// shared cache.herders list -- this is the single source of herder data now;
+// the purchase form no longer creates or edits herder records itself.
+function renderPurchaseHerderOptions(q){
+ const sel=$('herderSelect');if(!sel)return;
+ const query=(q??$('purchaseHerderSearch')?.value??'').trim().toLowerCase();
+ const prev=sel.value;
+ const items=cache.herders.filter(h=>!query||h.full_name.toLowerCase().includes(query)||(h.soum||'').toLowerCase().includes(query)).sort((a,b)=>a.full_name.localeCompare(b.full_name,'mn'));
+ sel.innerHTML='<option value="">-- малчин сонгох --</option>'+items.map(h=>`<option value="${h.id}" ${h.id===prev?'selected':''}>${esc(h.full_name)} — ${esc(h.soum)}</option>`).join('');
+ if(items.some(h=>h.id===prev))sel.value=prev;
+}
+// Callback passed to herderAddOpen() when it's launched from the purchase
+// screen's "+ Шинэ малчин бүртгэх" link: refresh the dropdown and pre-select
+// the herder that was just created, so staff don't have to search for the
+// person they only just typed in.
+function purchaseHerderAdded(h){
+ const sel=$('herderSelect');if(!sel)return; // purchase screen no longer open
+ const search=$('purchaseHerderSearch');if(search)search.value='';
+ renderPurchaseHerderOptions('');
+ sel.value=h.id;
+}
+window.purchaseHerderAdded=purchaseHerderAdded;
 async function createPurchase(fd){
- const surname=String(fd.get('herderSurname')||'').trim();
- const givenName=String(fd.get('herderGiven')||'').trim();
- const herderName=[surname,givenName].filter(Boolean).join(' ');
+ const herderId=String(fd.get('herder_id')||'');
+ const herder=cache.herders.find(h=>h.id===herderId);
+ if(!herder)return toast('Малчин сонгоно уу');
  const soum=String(fd.get('soum')), animalType=String(fd.get('animalType'));
- const certified=String(fd.get('certified'))==='true';
- const vaccinationDate=String(fd.get('vaccinationDate')||'')||null;
- const aimag=String(fd.get('aimag')||'Баянхонгор');
- const herder={id:uuid(),full_name:herderName,surname,given_name:givenName,aimag,soum,location_detail:null,herd_size:null,last_vaccination_date:vaccinationDate,certified,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
- // Reuse existing local/central herder by exact name+soum when possible.
- let existing=cache.herders.find(h=>h.full_name===herderName&&h.soum===soum);
- if(!existing){
-   existing=herder; cache.herders.push({...existing,_sync_state:'pending'});
-   await saveLocalRecord('herders',existing,'pending');
-   if(isOnline()){try{existing=await upsertDirect('herders',existing);cache.herders=cache.herders.filter(h=>h.id!==existing.id).concat({...existing,_sync_state:'synced'});}catch(err){await addOutbox('herder_create',existing);toast('Малчны мэдээлэл түр хадгалагдлаа')}}
-   else await addOutbox('herder_create',existing);
- } else if(existing._sync_state!=='synced'){
-   if(isOnline()){try{await upsertDirect('herders',existing)}catch(err){return toast('Малчны мэдээллийг эхлээд синк хийнэ үү')}}
-   else return toast('Энэ малчны мэдээлэл синк хийгдээгүй байна');
- } else {
-   // Known herder: certification status and vaccination date can legitimately
-   // change between purchases, so refresh them rather than silently keeping
-   // whatever was recorded the first time this herder was entered.
-   const changed = existing.certified!==certified ||
-     (vaccinationDate && existing.last_vaccination_date!==vaccinationDate);
-   if(changed && isOnline()){
-     const upd={...existing,certified,last_vaccination_date:vaccinationDate||existing.last_vaccination_date,updated_at:new Date().toISOString()};
-     try{
-       const saved=await upsertDirect('herders',upd);
-       cache.herders=cache.herders.filter(h=>h.id!==saved.id).concat({...saved,_sync_state:'synced'});
-       existing=saved;
-     }catch(err){ /* keep the purchase moving; herder detail can be corrected later */ }
-   }
- }
  const live=num(fd.get('liveWeight')), price=num(fd.get('pricePerKg')), ageYears=num(fd.get('ageYears'));
- const animal={id:uuid(),animal_code:`${(SOUMS.find(s=>s.name===soum)?.code||'GEN')}-${String(fd.get('date')).slice(2).replace(/-/g,'')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`,herder_id:existing.id,soum,purchase_date:String(fd.get('date')),animal_type:animalType,estimated_age_years:ageYears,live_weight_kg:live,price_per_kg:price,total_cost:live*price,status:'PURCHASED',note:fd.get('note')||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+ const animal={id:uuid(),animal_code:`${(SOUMS.find(s=>s.name===soum)?.code||'GEN')}-${String(fd.get('date')).slice(2).replace(/-/g,'')}-${crypto.randomUUID().slice(0,6).toUpperCase()}`,herder_id:herder.id,soum,purchase_date:String(fd.get('date')),animal_type:animalType,estimated_age_years:ageYears,live_weight_kg:live,price_per_kg:price,total_cost:live*price,status:'PURCHASED',note:fd.get('note')||null,created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
  cache.animals.push({...animal,_sync_state:'pending'});await saveLocalRecord('animals',animal,'pending');
  if(isOnline()){try{const saved=await upsertDirect('animals',animal);cache.animals=cache.animals.filter(a=>a.id!==animal.id).concat({...saved,_sync_state:'synced'});await saveLocalRecord('animals',saved,'synced');toast('Хадгалагдлаа')}catch(err){await addOutbox('animal_create',animal);toast('Локалд хадгаллаа — синк хүлээж байна')}} else {await addOutbox('animal_create',animal);toast('Offline хадгаллаа — интернэт ормогц синк хийнэ')}
- $('purchaseForm').reset();$('purchaseTotal').textContent='0 ₮';renderPurchaseList();
+ $('purchaseForm').reset();$('purchaseTotal').textContent='0 ₮';renderPurchaseHerderOptions('');renderPurchaseList();
 }
 function renderPurchaseList(){const el=$('purchaseList');if(!el)return;const items=cache.animals.slice().reverse();el.innerHTML=items.length?items.map(a=>`<div class="list-item"><div class="top-row"><div class="batch">${esc(a.animal_code)}</div><div class="date">${esc(a.purchase_date)}</div></div><div class="details">${esc(cache.herders.find(h=>h.id===a.herder_id)?.full_name||'—')} · ${esc(a.soum)} · ${esc(a.animal_type)}${a.estimated_age_years?', '+fmt(a.estimated_age_years)+' нас':''} · ${fmtKg(a.live_weight_kg)} кг · ${fmt(a.total_cost,0)}₮ ${a._sync_state!=='synced'?'<span class="badge neutral">Синк хүлээж байна</span>':''}</div></div>`).join(''):'<div class="empty"><div class="big">🗒️</div>Бичлэг алга байна</div>'}
 
@@ -749,7 +744,7 @@ async function herderDeleteConfirm(id,label){
  if(!cache.herders.some(h=>h.id===id)){histClose();navigate('herders')}
 }
 window.herderDeleteConfirm=herderDeleteConfirm;
-function herderAddOpen(){
+function herderAddOpen(onSaved){
  $('modal-root').innerHTML=`<div class="modal-back"><div class="modal">
    <div class="modal-head"><b>Малчин нэмэх</b><button class="x" onclick="histClose()">×</button></div>
    <form id="herderAddForm">
@@ -772,9 +767,24 @@ function herderAddOpen(){
    if(!full_name||!soum||!aimag||!vaccinationDate)return toast('Нэр, аймаг, сум, вакцины огноо шаардлагатай');
    const row={id:uuid(),full_name,surname,given_name:given,aimag,soum,location_detail:null,herd_size:fd.get('herd_size')?num(fd.get('herd_size')):null,last_vaccination_date:vaccinationDate,certified:String(fd.get('certified'))==='true',created_by:session.user.id,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
    try{
-     const saved=await upsertDirect('herders',row);
-     cache.herders.push(saved);
-     histClose();toast('Малчин нэмэгдлээ');renderHerderList();
+     let saved;
+     // This modal can now be opened from the offline-capable purchase screen
+     // (not just the online-only Малчид screen), so it needs the same
+     // queue-and-sync pattern purchases already use, rather than assuming a
+     // live connection.
+     if(isOnline()){
+       saved=await upsertDirect('herders',row);
+       cache.herders.push({...saved,_sync_state:'synced'});
+     } else {
+       saved={...row,_sync_state:'pending'};
+       cache.herders.push(saved);
+       await saveLocalRecord('herders',saved,'pending');
+       await addOutbox('herder_create',saved);
+     }
+     histClose();
+     toast(isOnline()?'Малчин нэмэгдлээ':'Локалд хадгаллаа — интернэт ормогц синк хийнэ');
+     renderHerderList();
+     if(typeof onSaved==='function')onSaved(saved);
    }catch(err){toast('Алдаа: '+errMn(err))}
  };
 }
