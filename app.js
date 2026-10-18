@@ -427,7 +427,7 @@ function renderTraceList(){
  if(!items.length){el.innerHTML='<div class="empty">Мал олдсонгүй</div>';return}
  el.innerHTML=formCard(`<table><tr><th>Мал</th><th>Нийт зардал</th><th>Орлого</th><th>Ашиг</th><th></th></tr>${items.map(a=>{
    const b=animalCostBreakdown(a.id);
-   return `<tr><td>${esc(a.animal_code)}<div class="helper">${esc(a.animal_type)} · ${esc(a.purchase_date||'')}</div></td><td>${fmt(b.totalCost,0)}₮</td><td>${fmt(b.revenue,0)}₮</td><td><b class="${b.profit<0?'danger-text':''}">${fmt(b.profit,0)}₮</b></td><td><button class="btn-ghost" onclick="traceOpen('${a.id}')">Дэлгэрэнгүй</button></td></tr>`;
+   return `<tr><td>${esc(a.animal_code)}<div class="helper">${esc(a.animal_type)} · ${esc(a.purchase_date||'')}</div></td><td>${fmt(b.totalCost,0)}₮</td><td>${fmt(b.revenue,0)}₮</td><td><b class="${b.profit<0?'danger-text':''}">${fmt(b.profit,0)}₮</b></td><td><button class="btn-ghost" onclick="traceOpen('${a.id}')">Дэлгэрэнгүй</button><button class="btn-ghost" style="margin-left:6px" onclick="delAnimal('${a.id}')">Устгах</button></td></tr>`;
  }).join('')}</table>`);
 }
 function traceOpen(id){
@@ -464,14 +464,14 @@ function renderInvMaterials(body){
 }
 function renderInvProducts(body){
  const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));
- body.innerHTML=formCard(ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th>Жин</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?prodQty(p):'<span class="badge bad">Дууссан</span>'}</b>${isPack(p)?`<div class="helper">${fmtKg(p.unit_weight_kg||0)} кг/ш</div>`:''}</td><td>${num(p.current_available)>0?fmtKg(prodKg(p))+' кг':'—'}</td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="deleteRecord('products','${p.id}','${esc(p.product_code)}')">Устгах</button>`:''}</td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>');
+ body.innerHTML=formCard(ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th>Жин</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?prodQty(p):'<span class="badge bad">Дууссан</span>'}</b>${isPack(p)?`<div class="helper">${fmtKg(p.unit_weight_kg||0)} кг/ш</div>`:''}</td><td>${num(p.current_available)>0?fmtKg(prodKg(p))+' кг':'—'}</td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="delProduct('${p.id}')">Устгах</button>`:''}</td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>');
 }
 function renderInvSales(body){
  const items=cache.sales.slice().sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||'')||new Date(b.created_at||0)-new Date(a.created_at||0));
  body.innerHTML=formCard(items.length?`<table><tr><th>Огноо</th><th>Бүтээгдэхүүн</th><th>Тоо хэмжээ</th><th>Жин</th><th>Дүн</th><th>Харилцагч</th><th></th></tr>${items.map(s=>{
    const p=cache.products.find(x=>x.id===s.product_id);
    const qtyLabel=p?.unit==='ширхэг'?`${fmt(s.qty,0)} ширхэг`:`${fmtKg(s.qty)} кг`;
-   return `<tr><td>${esc(s.sale_date||'')}</td><td>${esc(p?.product_code||'—')}<div class="helper">${esc(p?.product_type||'')}</div></td><td>${qtyLabel}</td><td>${fmtKg(saleKg(s,p))} кг</td><td><b>${fmt(s.total_amount,0)}₮</b></td><td>${esc(s.customer||'—')}</td><td>${p?`<button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>`:''}</td></tr>`;
+   return `<tr><td>${esc(s.sale_date||'')}</td><td>${esc(p?.product_code||'—')}<div class="helper">${esc(p?.product_type||'')}</div></td><td>${qtyLabel}</td><td>${fmtKg(saleKg(s,p))} кг</td><td><b>${fmt(s.total_amount,0)}₮</b></td><td>${esc(s.customer||'—')}</td><td>${p?`<button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>`:''}${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="delSale('${s.id}')">Устгах</button>`:''}</td></tr>`;
  }).join('')}</table>`:'<div class="empty">Борлуулалт алга</div>');
 }
 // ---- Хянах самбар: 4 tabs sharing one date-range filter, charts via
@@ -1225,24 +1225,13 @@ function deleteBlockers(table,id){
  }
  return b;
 }
+/* The old direct-DELETE path. It could never work: the schema has no
+   DELETE policies, so RLS matched zero rows and PostgREST returned
+   success -- the app said "Устгагдлаа" and nothing was deleted. Kept
+   only as a guard so it cannot be wired up again by mistake. */
 async function deleteRecord(table,id,label){
- if(profile?.role!=='superadmin')return toast('Зөвхөн супер админ устгах эрхтэй');
- const blockers=deleteBlockers(table,id);
- if(blockers.length){
-   return alert(`Устгах боломжгүй.\n\nЭнэ бичлэг дээр аль хэдийн: ${blockers.join(', ')}.\n\nМөшгөлтийн бүрэн бүтэн байдлыг хамгаалахын тулд устгахыг зөвшөөрөхгүй. Оронд нь Түүх хэсгээс засварлана уу.`);
- }
- const reason=prompt(`"${label}" -г устгах шалтгаан:`);
- if(reason===null)return;
- if(!reason.trim())return toast('Шалтгаан бөглөнө үү');
- if(!confirm('Энэ үйлдлийг буцаах боломжгүй. Устгах уу?'))return;
- try{
-   const row=(cache[table]||[]).find(r=>r.id===id)||null;
-   const r=await supa().from(table).delete().eq('id',id);
-   if(r.error)throw r.error;
-   await supa().from('audit_logs').insert({entity_type:table,entity_id:id,action:'DELETE',user_id:session.user.id,old_data:row,new_data:null,reason:reason.trim()});
-   toast('Устгагдлаа');
-   await pullData(); renderHome();
- }catch(err){ alert('Устгах алдаа: '+errMn(err)) }
+  console.warn('deleteRecord is retired; use delSale / delProduct / delAnimal');
+  toast('Устгах шинэ дараалал ашиглана уу');
 }
 window.deleteRecord=deleteRecord;
 
@@ -1282,7 +1271,10 @@ function errMn(err){
   'PRODUCT_NOT_FOUND':'Бүтээгдэхүүн олдсонгүй.',
   'SOURCE_ALREADY_SHOP':'Энэ нөөц аль хэдийн дэлгүүрт байна.',
   'SOURCE_NOT_FOUND':'Эх үүсвэр олдсонгүй.',
-  'TRANSPORT_NOT_FOUND':'Тээвэр олдсонгүй.'
+  'TRANSPORT_NOT_FOUND':'Тээвэр олдсонгүй.',
+  'SALE_NOT_FOUND':'Борлуулалт олдсонгүй.',
+  'REASON_REQUIRED':'Устгах шалтгаанаа бичнэ үү (3-аас дээш тэмдэгт).',
+  'CODE_MISMATCH':'Малын код таарахгүй байна. Устгасангүй.'
  };
  for(const k in m){ if(raw.includes(k)) {
    if(k==='INSUFFICIENT_MATERIAL'||k==='INSUFFICIENT_PRODUCT') break;
@@ -1292,6 +1284,10 @@ function errMn(err){
  if(mm) return `Материалын үлдэгдэл хүрэлцэхгүй байна. Боломжит: ${fmtKg(mm[1])} кг`;
  mm=raw.match(/INSUFFICIENT_PRODUCT:([\d.]+)/);
  if(mm) return `Бүтээгдэхүүний үлдэгдэл хүрэлцэхгүй байна. Боломжит: ${fmt(mm[1])}`;
+ mm=raw.match(/HAS_SALES:(\d+)/);
+ if(mm) return `Энэ бүтээгдэхүүн дээр ${mm[1]} борлуулалт бүртгэгдсэн байна. Эхлээд борлуулалтыг устгана уу.`;
+ mm=raw.match(/HAS_PRODUCTS:(\d+)/);
+ if(mm) return `Энэ малаас ${mm[1]} бүтээгдэхүүн үүссэн байна. Эхлээд бүтээгдэхүүнийг устгана уу.`;
  if(/Failed to fetch|NetworkError|network/i.test(raw)) return 'Сүлжээний алдаа. Интернэт холболтоо шалгана уу.';
  if(/JWT|token|expired/i.test(raw)) return 'Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү.';
  return raw;
