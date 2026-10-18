@@ -23,6 +23,15 @@ const fmt=(v,dec=1)=>num(v).toLocaleString('mn-MN',{maximumFractionDigits:dec});
 // Weights always show 3 decimals (12 -> 12.000) so partial cuts like
 // 3.545 kg are never silently rounded. Money stays whole tögrög.
 const fmtKg=v=>num(v).toLocaleString('mn-MN',{minimumFractionDigits:3,maximumFractionDigits:3});
+// A product is stocked either in pieces (Хорхог багц: unit 'ширхэг', with a
+// fixed kg per package) or in kilograms. These two helpers keep every screen
+// honest about which is which: the COUNT in its own unit, and the WEIGHT that
+// count represents. Never print a balance without also printing the weight --
+// that ambiguity is what made "0.5 ширхэг" possible.
+const isPack=p=>p&&p.unit==='ширхэг';
+const prodQty=p=>isPack(p)?fmt(num(p.current_available),0)+' ширхэг':fmtKg(p.current_available)+' кг';
+const prodKg=p=>isPack(p)?num(p.current_available)*num(p.unit_weight_kg||0):num(p.current_available);
+const saleKg=(s,p)=>isPack(p)?num(s.qty)*num(p.unit_weight_kg||0):num(s.qty);
 // Local calendar date, not UTC. Mongolia is UTC+8, so toISOString() would
 // return the previous day for any local time before 08:00 -- which silently
 // pre-filled forms with yesterday's date during early-morning work.
@@ -455,14 +464,14 @@ function renderInvMaterials(body){
 }
 function renderInvProducts(body){
  const ps=cache.products.slice().sort((a,b)=>(num(b.current_available)>0)-(num(a.current_available)>0));
- body.innerHTML=formCard(ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?fmt(p.current_available)+' '+esc(p.unit):'<span class="badge bad">Дууссан</span>'}</b></td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="deleteRecord('products','${p.id}','${esc(p.product_code)}')">Устгах</button>`:''}</td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>');
+ body.innerHTML=formCard(ps.length?`<table><tr><th>Код</th><th>Мал</th><th>Төрөл</th><th>Амьтан</th><th>Үлдэгдэл</th><th>Жин</th><th></th></tr>${ps.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.animal_type||'')}</td><td>${esc(p.product_type)}</td><td>${esc(p.animal_code||'—')}</td><td><b>${num(p.current_available)>0?prodQty(p):'<span class="badge bad">Дууссан</span>'}</b>${isPack(p)?`<div class="helper">${fmtKg(p.unit_weight_kg||0)} кг/ш</div>`:''}</td><td>${num(p.current_available)>0?fmtKg(prodKg(p))+' кг':'—'}</td><td><button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>${profile?.role==='superadmin'?`<button class="btn-ghost" style="margin-left:6px" onclick="deleteRecord('products','${p.id}','${esc(p.product_code)}')">Устгах</button>`:''}</td></tr>`).join('')}</table>`:'<div class="empty">Бүтээгдэхүүний үлдэгдэл алга</div>');
 }
 function renderInvSales(body){
  const items=cache.sales.slice().sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||'')||new Date(b.created_at||0)-new Date(a.created_at||0));
- body.innerHTML=formCard(items.length?`<table><tr><th>Огноо</th><th>Бүтээгдэхүүн</th><th>Тоо хэмжээ</th><th>Дүн</th><th>Харилцагч</th><th></th></tr>${items.map(s=>{
+ body.innerHTML=formCard(items.length?`<table><tr><th>Огноо</th><th>Бүтээгдэхүүн</th><th>Тоо хэмжээ</th><th>Жин</th><th>Дүн</th><th>Харилцагч</th><th></th></tr>${items.map(s=>{
    const p=cache.products.find(x=>x.id===s.product_id);
    const qtyLabel=p?.unit==='ширхэг'?`${fmt(s.qty,0)} ширхэг`:`${fmtKg(s.qty)} кг`;
-   return `<tr><td>${esc(s.sale_date||'')}</td><td>${esc(p?.product_code||'—')}<div class="helper">${esc(p?.product_type||'')}</div></td><td>${qtyLabel}</td><td><b>${fmt(s.total_amount,0)}₮</b></td><td>${esc(s.customer||'—')}</td><td>${p?`<button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>`:''}</td></tr>`;
+   return `<tr><td>${esc(s.sale_date||'')}</td><td>${esc(p?.product_code||'—')}<div class="helper">${esc(p?.product_type||'')}</div></td><td>${qtyLabel}</td><td>${fmtKg(saleKg(s,p))} кг</td><td><b>${fmt(s.total_amount,0)}₮</b></td><td>${esc(s.customer||'—')}</td><td>${p?`<button class="btn-ghost" onclick="showQR('${esc(p.product_code)}')">QR</button>`:''}</td></tr>`;
  }).join('')}</table>`:'<div class="empty">Борлуулалт алга</div>');
 }
 // ---- Хянах самбар: 4 tabs sharing one date-range filter, charts via
