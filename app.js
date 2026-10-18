@@ -1297,7 +1297,19 @@ function errMn(err){
  return raw;
 }
 async function rpc(fn,args){const r=await supa().rpc(fn,args);if(r.error)throw r.error;return r.data}
-async function pullTable(table){const remote=REMOTE_VIEWS[table]||table;const r=await supa().from(remote).select('*');if(r.error)throw r.error;cache[table]=r.data||[];for(const row of cache[table])await saveLocalRecord(table,row,'synced')}
+async function pullTable(table){const remote=REMOTE_VIEWS[table]||table;const r=await supa().from(remote).select('*');if(r.error)throw r.error;
+ const fresh=r.data||[];
+ /* Sync used to add rows only, never remove them. A row deleted on the server
+    -- a corrected record, a removed animal, a database reset -- stayed in
+    IndexedDB forever and kept reappearing in Агуулах and Баглаа боодол.
+    Prune local rows the server no longer has. Rows still waiting in the
+    offline outbox are never touched: they exist nowhere else yet. */
+ if(fresh.every(x=>x&&x.id)){
+   const keep=new Set(fresh.map(x=>x.id));
+   const local=(await idbGetAll('records')).filter(x=>x.table===table);
+   for(const o of local){if(o.row&&o.row._sync_state!=='pending'&&!keep.has(o.row.id))await idbDelete('records',o.key)}
+ }
+ cache[table]=fresh;for(const row of fresh)await saveLocalRecord(table,row,'synced')}
 async function pullData(){if(!isOnline())return;for(const t of TABLES.filter(x=>x!=='audit_logs'))await pullTable(t);try{await pullTable('audit_logs')}catch(_){}settings.lastSync=new Date().toISOString();await saveSettings();await loadLocal()}
 async function syncNow(){if(syncing||!isOnline()||!supa())return;syncing=true;try{
   const events=(await idbGetAll('outbox')).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
