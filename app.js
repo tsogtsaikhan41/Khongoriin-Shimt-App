@@ -24,9 +24,9 @@ const fmt=(v,dec=1)=>num(v).toLocaleString('mn-MN',{maximumFractionDigits:dec});
 // 3.545 kg are never silently rounded. Money stays whole tögrög.
 const fmtKg=v=>num(v).toLocaleString('mn-MN',{minimumFractionDigits:3,maximumFractionDigits:3});
 // A product is stocked either in pieces (Хорхог багц: unit 'ширхэг', with a
-// fixed kg per package) or in kilograms. These two helpers keep every screen
+// fixed kg per package) or in kilograms. These helpers keep every screen
 // honest about which is which: the COUNT in its own unit, and the WEIGHT that
-// count represents. Never print a balance without also printing the weight --
+// count represents. Never print a balance without the weight beside it --
 // that ambiguity is what made "0.5 ширхэг" possible.
 const isPack=p=>p&&p.unit==='ширхэг';
 const prodQty=p=>isPack(p)?fmt(num(p.current_available),0)+' ширхэг':fmtKg(p.current_available)+' кг';
@@ -1225,15 +1225,67 @@ function deleteBlockers(table,id){
  }
  return b;
 }
-/* The old direct-DELETE path. It could never work: the schema has no
-   DELETE policies, so RLS matched zero rows and PostgREST returned
-   success -- the app said "Устгагдлаа" and nothing was deleted. Kept
-   only as a guard so it cannot be wired up again by mistake. */
-async function deleteRecord(table,id,label){
-  console.warn('deleteRecord is retired; use delSale / delProduct / delAnimal');
-  toast('Устгах шинэ дараалал ашиглана уу');
+/* ---- Superadmin delete ladder --------------------------------------
+   Each step reverses exactly ONE layer and refuses while the layer below
+   it still exists, so a wrong click costs one record, not a chain. The
+   real rules live in the database (delete_sale / delete_product /
+   delete_animal, superadmin-checked there). Everything here is only the
+   dialog. The reason is mandatory and is stored with the full old record
+   in audit_logs, so a deleted record stays readable in Түүх.
+
+   The old deleteRecord() that lived here called a direct DELETE on the
+   table. It could never work: the schema has no DELETE policies, so RLS
+   matched zero rows and PostgREST returned success -- the app said
+   "Устгагдлаа" and deleted nothing. It is gone; these replace it.
+------------------------------------------------------------------- */
+function delAsk(title,warn){
+  const reason=prompt(`${title}\n\n${warn}\n\nУстгах шалтгаан:`);
+  if(reason===null)return null;
+  if(!reason.trim()||reason.trim().length<3){toast('Шалтгаанаа бичнэ үү');return null}
+  return reason.trim();
 }
-window.deleteRecord=deleteRecord;
+async function delSale(id){
+  if(profile?.role!=='superadmin')return toast('Зөвхөн супер админ устгах эрхтэй');
+  const s=cache.sales.find(x=>x.id===id); if(!s)return;
+  const p=cache.products.find(x=>x.id===s.product_id);
+  const reason=delAsk(`Борлуулалт устгах — ${p?.product_code||''}`,
+    `${fmt(s.total_amount,0)}₮ орлого буцаана. Бүтээгдэхүүн нөөцөд эргэж орно.`);
+  if(!reason)return;
+  try{
+    const r=await rpc('delete_sale',{p_sale_id:id,p_reason:reason});
+    toast(`Устгагдлаа — ${fmt(r?.amount||s.total_amount,0)}₮ буцаалаа`);
+    await pullData(); renderInventory();
+  }catch(err){alert('Устгах алдаа: '+errMn(err))}
+}
+async function delProduct(id){
+  if(profile?.role!=='superadmin')return toast('Зөвхөн супер админ устгах эрхтэй');
+  const p=cache.products.find(x=>x.id===id); if(!p)return;
+  const reason=delAsk(`Бүтээгдэхүүн устгах — ${p.product_code}`,
+    `${fmtKg(p.weight_kg)} кг эх материалд буцаж нэмэгдэнэ. QR код ажиллахаа болино.`);
+  if(!reason)return;
+  try{
+    const r=await rpc('delete_product',{p_product_id:id,p_reason:reason});
+    toast(`Устгагдлаа — ${fmtKg(r?.returned_kg||p.weight_kg)} кг буцаалаа`);
+    await pullData(); renderInventory();
+  }catch(err){alert('Устгах алдаа: '+errMn(err))}
+}
+async function delAnimal(id){
+  if(profile?.role!=='superadmin')return toast('Зөвхөн супер админ устгах эрхтэй');
+  const a=cache.animals.find(x=>x.id===id); if(!a)return;
+  const reason=delAsk(`Мал устгах — ${a.animal_code}`,
+    'Худалдан авалт, төхөөрөх, материал, тээвэр, хүлээн авалт БҮГД устана.\nМалчны бүртгэл үлдэнэ. Бүрэн бичлэг Түүх хэсэгт хадгалагдана.');
+  if(!reason)return;
+  // Typed back here for the person's sake; the database checks it again,
+  // so a mis-click or a stale page cannot destroy the wrong animal.
+  const typed=prompt(`Баталгаажуулах: малын кодыг яг бичнэ үү\n\n${a.animal_code}`);
+  if(typed===null)return;
+  try{
+    const r=await rpc('delete_animal',{p_animal_id:id,p_confirm_code:typed,p_reason:reason});
+    toast(`${r?.animal_code||a.animal_code} устгагдлаа`);
+    await pullData(); renderInventory();
+  }catch(err){alert('Устгах алдаа: '+errMn(err))}
+}
+window.delSale=delSale;window.delProduct=delProduct;window.delAnimal=delAnimal;
 
 window.histOpen=histOpen;window.histClose=histClose;window.histPage=histPage;window.histEdit=histEdit;
 window.invTab=invTab;
@@ -1298,8 +1350,8 @@ async function pullTable(table){const remote=REMOTE_VIEWS[table]||table;const r=
  /* Sync used to add rows only, never remove them. A row deleted on the server
     -- a corrected record, a removed animal, a database reset -- stayed in
     IndexedDB forever and kept reappearing in Агуулах and Баглаа боодол.
-    Prune local rows the server no longer has. Rows still waiting in the
-    offline outbox are never touched: they exist nowhere else yet. */
+    Rows still waiting in the offline outbox are never pruned: they exist
+    nowhere else yet. */
  if(fresh.every(x=>x&&x.id)){
    const keep=new Set(fresh.map(x=>x.id));
    const local=(await idbGetAll('records')).filter(x=>x.table===table);
